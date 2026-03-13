@@ -1,0 +1,5 @@
+{
+  "name": "SaaS AI SEO Architecture",
+  "description": "Architectural plan and documentation for a SaaS that connects to WordPress to generate semantic layers and schema.org for LLMs and AI engines.",
+  "requestFramePermissions": []
+}
