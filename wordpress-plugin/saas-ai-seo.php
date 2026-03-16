@@ -115,7 +115,8 @@ class SaaS_AI_SEO_Plugin {
             return ['success' => false, 'message' => 'Please save your URL and API Key first.'];
         }
 
-        // Ensure URL has scheme
+        // Sanitize and ensure URL has scheme
+        $saas_url = esc_url_raw($saas_url);
         if (!preg_match("~^(?:f|ht)tps?://~i", $saas_url)) {
             $saas_url = "https://" . $saas_url;
         }
@@ -130,30 +131,21 @@ class SaaS_AI_SEO_Plugin {
         $payload_json = wp_json_encode(['test' => true, 'siteId' => parse_url(home_url(), PHP_URL_HOST)]);
         $signature = hash_hmac('sha256', $payload_json, $api_key);
 
-        // Ensure we construct the URL correctly, even if the user pasted a URL with a path
-        $parsed_url = parse_url($saas_url);
-        $base_url = (isset($parsed_url['scheme']) ? $parsed_url['scheme'] : 'https') . '://' . (isset($parsed_url['host']) ? $parsed_url['host'] : '');
-        if (isset($parsed_url['port'])) {
-            $base_url .= ':' . $parsed_url['port'];
-        }
-        
-        // If the user included /apps/uuid in the URL, preserve it
-        $path = isset($parsed_url['path']) ? $parsed_url['path'] : '';
-        $webhook_url = rtrim($base_url . $path, '/');
-        
         // Don't append /api/webhooks/wp if the user already included it in the URL
-        if (!preg_match('#/api/webhooks/wp$#i', $webhook_url)) {
-            $webhook_url .= '/api/webhooks/wp';
+        if (!preg_match('#/api/webhooks/wp$#i', $saas_url)) {
+            $saas_url .= '/api/webhooks/wp';
         }
+        $webhook_url = $saas_url;
 
         $response = wp_remote_post($webhook_url, [
-            'body'      => $payload_json,
-            'headers'   => [
+            'body'        => $payload_json,
+            'headers'     => [
                 'Content-Type'     => 'application/json',
                 'X-SaaS-Signature' => $signature
             ],
-            'timeout'   => 15, // Use a longer timeout for the test
-            'blocking'  => true // Blocking is true here so we can see the result
+            'timeout'     => 15, // Use a longer timeout for the test
+            'blocking'    => true, // Blocking is true here so we can see the result
+            'httpversion' => '1.1' // Force HTTP/1.1 to prevent 400 Bad Request from modern load balancers
         ]);
 
         if (is_wp_error($response)) {
@@ -189,7 +181,8 @@ class SaaS_AI_SEO_Plugin {
         
         if (empty($api_key) || empty($saas_url)) return;
 
-        // Ensure URL has scheme
+        // Sanitize and ensure URL has scheme
+        $saas_url = esc_url_raw($saas_url);
         if (!preg_match("~^(?:f|ht)tps?://~i", $saas_url)) {
             $saas_url = "https://" . $saas_url;
         }
@@ -216,29 +209,22 @@ class SaaS_AI_SEO_Plugin {
         // Sign Payload with HMAC-SHA256
         $signature = hash_hmac('sha256', $payload_json, $api_key);
 
-        // Ensure we construct the URL correctly
-        $parsed_url = parse_url($saas_url);
-        $base_url = (isset($parsed_url['scheme']) ? $parsed_url['scheme'] : 'https') . '://' . (isset($parsed_url['host']) ? $parsed_url['host'] : '');
-        if (isset($parsed_url['port'])) {
-            $base_url .= ':' . $parsed_url['port'];
-        }
-        $path = isset($parsed_url['path']) ? $parsed_url['path'] : '';
-        $webhook_url = rtrim($base_url . $path, '/');
-        
         // Don't append /api/webhooks/wp if the user already included it in the URL
-        if (!preg_match('#/api/webhooks/wp$#i', $webhook_url)) {
-            $webhook_url .= '/api/webhooks/wp';
+        if (!preg_match('#/api/webhooks/wp$#i', $saas_url)) {
+            $saas_url .= '/api/webhooks/wp';
         }
+        $webhook_url = $saas_url;
 
         // Send Async Request to SaaS (blocking => false ensures WP doesn't hang)
         wp_remote_post($webhook_url, [
-            'body'      => $payload_json,
-            'headers'   => [
+            'body'        => $payload_json,
+            'headers'     => [
                 'Content-Type'     => 'application/json',
                 'X-SaaS-Signature' => $signature
             ],
-            'timeout'   => 5,
-            'blocking'  => false 
+            'timeout'     => 5,
+            'blocking'    => false,
+            'httpversion' => '1.1' // Force HTTP/1.1 to prevent 400 Bad Request
         ]);
     }
 
@@ -247,7 +233,7 @@ class SaaS_AI_SEO_Plugin {
      */
     public function register_rest_routes() {
         register_rest_route('saas-ai-seo/v1', '/update-layer', [
-            'methods'             => 'POST',
+            'methods'             => WP_REST_Server::CREATABLE . ', ' . WP_REST_Server::EDITABLE,
             'callback'            => [$this, 'handle_update_layer'],
             'permission_callback' => '__return_true' // Authorization is handled via HMAC signature
         ]);
@@ -255,20 +241,47 @@ class SaaS_AI_SEO_Plugin {
 
     public function handle_update_layer(WP_REST_Request $request) {
         $api_key = get_option($this->option_api_key);
-        $signature = $request->get_header('X_SAAS_SIGNATURE'); // WP converts headers to uppercase with underscores
-        $payload = $request->get_body();
+        if (empty($api_key)) {
+            return new WP_Error('unauthorized', 'API key not configured', ['status' => 401]);
+        }
 
-        // Verify Signature
+        $signature = $request->get_header('x-saas-signature');
+        if (!is_string($signature)) {
+            $signature = '';
+        }
+        
+        // Read payload from form data
+        $payload = $request->get_param('payload');
+        
+        if (empty($payload)) {
+            error_log('SaaS AI SEO: Empty payload received.');
+            return new WP_Error('bad_request', 'Empty payload', ['status' => 400]);
+        }
+
+        // Ensure payload is a string for hash_hmac
+        if (!is_string($payload)) {
+            $payload = wp_json_encode($payload);
+        }
+        
+        // Verify Signature FIRST
         $expected_signature = hash_hmac('sha256', $payload, $api_key);
         if (!hash_equals($expected_signature, $signature)) {
+            error_log('SaaS AI SEO: Signature mismatch. Expected: ' . $expected_signature . ', Got: ' . $signature);
             return new WP_Error('unauthorized', 'Invalid HMAC signature', ['status' => 401]);
         }
 
+        // Now it's safe to decode
         $data = json_decode($payload, true);
-        $post_id = isset($data['postId']) ? intval($data['postId']) : 0;
-        $json_ld = isset($data['jsonLd']) ? $data['jsonLd'] : null;
+        
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('SaaS AI SEO: Invalid JSON payload.');
+            return new WP_Error('bad_request', 'Invalid JSON', ['status' => 400]);
+        }
 
-        if ($post_id && $json_ld) {
+        $post_id = isset($data['postId']) ? intval($data['postId']) : 0;
+        $json_ld = isset($data['jsonLd']) ? $data['jsonLd'] : []; // Default to empty array if missing
+
+        if ($post_id) {
             // Save JSON-LD as post meta. wp_slash is required before update_post_meta for JSON strings.
             $json_string = is_string($json_ld) ? $json_ld : wp_json_encode($json_ld);
             update_post_meta($post_id, '_saas_ai_seo_json_ld', wp_slash($json_string));
@@ -276,7 +289,8 @@ class SaaS_AI_SEO_Plugin {
             return rest_ensure_response(['success' => true, 'message' => 'Semantic layer updated']);
         }
 
-        return new WP_Error('bad_request', 'Missing postId or jsonLd', ['status' => 400]);
+        error_log('SaaS AI SEO: Missing postId. Received data: ' . print_r($data, true));
+        return new WP_Error('bad_request', 'Missing postId', ['status' => 400]);
     }
 
     /**

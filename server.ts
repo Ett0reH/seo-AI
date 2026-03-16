@@ -159,25 +159,53 @@ async function startServer() {
         }
 
         // 4. Send JSON-LD back to WordPress
-        console.log(`[Background Job] Sending JSON-LD back to WordPress: ${wpRestUrl}`);
-        const callbackPayload = JSON.stringify({
+        // Ensure URL doesn't have double slashes but keep the protocol slashes
+        const cleanWpRestUrl = wpRestUrl.replace(/([^:]\/)\/+/g, "$1");
+        console.log(`[Background Job] Sending JSON-LD back to WordPress: ${cleanWpRestUrl}`);
+        
+        // 1. Costruisci l'oggetto payload con postId e jsonLd INSIEME
+        const payloadObject = {
           postId: postId,
           jsonLd: aiResult.jsonLd
-        });
+        };
         
-        const callbackSignature = crypto.createHmac('sha256', SHARED_SECRET).update(callbackPayload).digest('hex');
+        // 2. Serializza in stringa JSON
+        const payloadString = JSON.stringify(payloadObject);
+        
+        // 3. Calcola firma HMAC-SHA256 sulla stringa JSON ESATTA
+        const callbackSignature = crypto
+          .createHmac('sha256', SHARED_SECRET)
+          .update(payloadString)
+          .digest('hex');
 
-        const wpResponse = await fetch(wpRestUrl, {
+        // 4. Wrappa in un campo form chiamato "payload"
+        const formData = new URLSearchParams();
+        formData.append('payload', payloadString);
+
+        console.log(`[Background Job] Executing POST request to: ${cleanWpRestUrl}`);
+        
+        // 5. Invia come application/x-www-form-urlencoded
+        const wpResponse = await fetch(cleanWpRestUrl, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'X-SaaS-Signature': callbackSignature
           },
-          body: callbackPayload
+          body: formData.toString(),
+          redirect: 'manual' // Don't follow redirects automatically so we can see if WP is redirecting us
         });
 
+        console.log('[Background Job] WP response status:', wpResponse.status);
+        const responseBody = await wpResponse.text();
+        console.log('[Background Job] WP response body:', responseBody);
+
+        if (wpResponse.status >= 300 && wpResponse.status < 400) {
+           console.error(`[Background Job] WordPress returned a redirect (${wpResponse.status}) to: ${wpResponse.headers.get('location')}. This usually breaks POST requests.`);
+        }
+
         if (!wpResponse.ok) {
-          console.error(`[Background Job] Failed to send data back to WP. Status: ${wpResponse.status}`);
+          console.error(`[Background Job] Failed to send data back to WP. Status: ${wpResponse.status}, Body: ${responseBody}`);
         } else {
           console.log(`[Background Job] Successfully updated WordPress post ${postId}`);
         }

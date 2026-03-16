@@ -19,7 +19,10 @@ export async function analyzeContent(title: string, content: string) {
 Title: ${title}
 Content: ${content}
 
-Extract the main topic, the search intent, the schema.org type that best fits this content, and generate the full JSON-LD schema.org object. Also extract up to 3 main entities.`;
+Extract the main topic, the search intent, the schema.org type that best fits this content, and generate the full JSON-LD schema.org object. Also extract up to 3 main entities.
+
+CRITICAL INSTRUCTION FOR jsonLd:
+You MUST generate a complete, valid JSON-LD object for the 'jsonLd' field. It must include "@context": "https://schema.org" and the appropriate "@type". Do not leave it empty.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
