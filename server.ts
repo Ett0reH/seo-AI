@@ -97,7 +97,7 @@ async function startServer() {
     (async () => {
       try {
         console.log(`[Background Job] Analyzing content for ${postUrl}...`);
-        const aiResult = await analyzeContent(postTitle, postContent);
+        const aiResult = await analyzeContent(postTitle, postContent, postUrl);
         
         // Upsert Site in SaaS DB
         const upsertSite = db.prepare(`
