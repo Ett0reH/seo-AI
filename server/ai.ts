@@ -22,7 +22,8 @@ Content: ${content}
 Extract the main topic, the search intent, the schema.org type that best fits this content, and generate the full JSON-LD schema.org object. Also extract up to 3 main entities.
 
 CRITICAL INSTRUCTION FOR jsonLd:
-You MUST generate a complete, valid JSON-LD object for the 'jsonLd' field. It must include "@context": "https://schema.org" and the appropriate "@type". Do not leave it empty.`;
+You MUST generate a complete, valid JSON-LD object for the 'jsonLd' field. It must include "@context": "https://schema.org" and the appropriate "@type". 
+Because of schema constraints, you MUST return the JSON-LD object as a stringified JSON (a string containing the JSON). Do not leave it empty.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -38,7 +39,7 @@ You MUST generate a complete, valid JSON-LD object for the 'jsonLd' field. It mu
             enum: ['Informational', 'Navigational', 'Transactional', 'Commercial'] 
           },
           schemaType: { type: Type.STRING },
-          jsonLd: { type: Type.OBJECT },
+          jsonLd: { type: Type.STRING, description: "The stringified JSON-LD object" },
           entities: {
             type: Type.ARRAY,
             items: {
@@ -58,5 +59,18 @@ You MUST generate a complete, valid JSON-LD object for the 'jsonLd' field. It mu
 
   const text = response.text;
   if (!text) throw new Error('No response from AI');
-  return JSON.parse(text);
+  
+  const parsed = JSON.parse(text);
+  
+  // Parse the stringified JSON-LD back into an object so the rest of the app works as expected
+  try {
+    if (typeof parsed.jsonLd === 'string') {
+      parsed.jsonLd = JSON.parse(parsed.jsonLd);
+    }
+  } catch (e) {
+    console.error("Failed to parse jsonLd string from AI:", e);
+    parsed.jsonLd = {};
+  }
+  
+  return parsed;
 }

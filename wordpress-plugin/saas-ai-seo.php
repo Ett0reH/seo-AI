@@ -284,7 +284,8 @@ class SaaS_AI_SEO_Plugin {
         if ($post_id) {
             // Save JSON-LD as post meta. wp_slash is required before update_post_meta for JSON strings.
             $json_string = is_string($json_ld) ? $json_ld : wp_json_encode($json_ld);
-            update_post_meta($post_id, '_saas_ai_seo_json_ld', wp_slash($json_string));
+            // Removed the underscore prefix so it becomes visible in the WordPress Custom Fields UI
+            update_post_meta($post_id, 'saas_ai_seo_json_ld', wp_slash($json_string));
             
             return rest_ensure_response(['success' => true, 'message' => 'Semantic layer updated']);
         }
@@ -299,7 +300,8 @@ class SaaS_AI_SEO_Plugin {
     public function inject_semantic_layer() {
         if (is_singular()) {
             $post_id = get_the_ID();
-            $json_ld = get_post_meta($post_id, '_saas_ai_seo_json_ld', true);
+            // Read from the new visible meta key
+            $json_ld = get_post_meta($post_id, 'saas_ai_seo_json_ld', true);
             
             if (!empty($json_ld)) {
                 echo "\n<!-- SaaS AI SEO Semantic Layer -->\n";
@@ -308,6 +310,9 @@ class SaaS_AI_SEO_Plugin {
                 echo stripslashes($json_ld) . "\n";
                 echo "</script>\n";
                 echo "<!-- End SaaS AI SEO -->\n";
+            } else {
+                // Debug comment to prove the hook is firing even if empty
+                echo "\n<!-- SaaS AI SEO: No semantic layer found for this post -->\n";
             }
         }
     }
