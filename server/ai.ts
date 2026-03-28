@@ -27,7 +27,7 @@ You MUST generate a complete, valid JSON object for the 'jsonLd' field.
 Because of schema constraints, you MUST return this entire combined JSON object as a stringified JSON (a string containing the JSON). Do not leave it empty.
 
 The stringified JSON MUST contain TWO main parts merged into one single object:
-1. A complete Schema.org representation using "@context": "https://schema.org" and an "@graph" array containing WebPage, Person (Author), BlogPosting/Article, and Organization.
+1. A complete Schema.org representation using "@context": "https://schema.org" and an "@graph" array containing WebPage, Person (Author), BlogPosting/Article, and Organization. IMPORTANT: If the content contains products, FAQs, or other specific schema types, you MUST include them as additional objects inside the "@graph" array (e.g., {"@type": "Product", ...}, {"@type": "FAQPage", ...}).
 2. A "Semantic AI Layer" with custom keys at the root level to help LLMs understand the page. These keys include: "page", "search_context", "topics", "entities", "concepts", "relationships", "knowledge_units", "questions", and "ai_summary".
 
 IMPORTANT RULES: 
