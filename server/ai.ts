@@ -32,17 +32,24 @@ The stringified JSON MUST contain TWO main parts merged into one single object:
 
 IMPORTANT RULES: 
 1. Use the EXACT URL provided (${postUrl}) for any "@id" or "url" fields. Do NOT use example.com.
-2. If the author is not explicitly mentioned in the text, use "Autore Anonimo" or omit the author name. Do NOT use a hardcoded name unless found in the text.
+2. If the author is not explicitly mentioned in the text, use "Autore Anonimo" or omit the author name. Do NOT use "Stefano Giurin" or any other hardcoded name unless explicitly found in the text. This SaaS is used for multiple websites.
 3. Extract the actual organization name and domain from the URL if possible.
 
 Example of the expected structure for the stringified JSON:
 {
   "@context": "https://schema.org",
   "@graph": [
-    { "@type": "WebPage", "@id": "${postUrl}#webpage", "url": "${postUrl}", ... },
-    { "@type": "Person", ... },
-    { "@type": "BlogPosting", ... },
-    { "@type": "Organization", ... }
+    {
+      "@type": "WebPage",
+      "@id": "${postUrl}#webpage",
+      "url": "${postUrl}",
+      "name": "${title}",
+      "about": { "@id": "https://domain.com/#organization" },
+      "mentions": [ { "@type": "Thing", "name": "..." } ]
+    },
+    { "@type": "Person", "name": "Autore Anonimo" },
+    { "@type": "BlogPosting", "headline": "${title}", "mainEntityOfPage": { "@id": "${postUrl}#webpage" } },
+    { "@type": "Organization", "@id": "https://domain.com/#organization", "name": "..." }
   ],
   "page": { "page_id": "...", "page_type": "...", "primary_topic": "...", "content_goal": "...", "target_audience": "..." },
   "search_context": { "search_intent": "...", "difficulty_level": "...", "content_depth": "..." },
