@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Globe, FileText, Network, Settings, LogOut, Download } from 'lucide-react';
+import { LayoutDashboard, Globe, FileText, Network, Settings, LogOut, Download, Send, FileStack, BarChart3, Radar } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const navigation = [
@@ -7,6 +7,10 @@ const navigation = [
   { name: 'Sites', href: '/sites', icon: Globe },
   { name: 'Pages & Content', href: '/pages', icon: FileText },
   { name: 'Entity Graph', href: '/entities', icon: Network },
+  { name: 'Distribuzione', href: '/distribute', icon: Send },
+  { name: 'Bozze & Approvazioni', href: '/drafts', icon: FileStack },
+  { name: 'Tracking', href: '/tracking', icon: Radar },
+  { name: 'Report', href: '/reports', icon: BarChart3 },
   { name: 'Plugin Download', href: '/plugin', icon: Download },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

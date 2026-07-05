@@ -6,6 +6,10 @@ import { PagesList } from './pages/PagesList';
 import { Entities } from './pages/Entities';
 import { Settings } from './pages/Settings';
 import { PluginDownload } from './pages/PluginDownload';
+import { MasterContent } from './pages/MasterContent';
+import { Drafts } from './pages/Drafts';
+import { Tracking } from './pages/Tracking';
+import { Reports } from './pages/Reports';
 
 export default function App() {
   return (
@@ -16,6 +20,10 @@ export default function App() {
           <Route path="sites" element={<Sites />} />
           <Route path="pages" element={<PagesList />} />
           <Route path="entities" element={<Entities />} />
+          <Route path="distribute" element={<MasterContent />} />
+          <Route path="drafts" element={<Drafts />} />
+          <Route path="tracking" element={<Tracking />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="plugin" element={<PluginDownload />} />
           <Route path="settings" element={<Settings />} />
         </Route>
