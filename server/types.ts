@@ -76,3 +76,59 @@ export interface Utm {
   term?: string;
   url: string;           // URL finale con parametri UTM
 }
+
+// ── Pubblicazione reale via API / scheduler autorizzati (MVP-2) ──
+// Vincolo: solo API ufficiali o webhook verso scheduler autorizzati.
+// Nessuna automazione browser in nessun connettore.
+
+export type ConnectorId = 'devto' | 'wordpress' | 'github' | 'webhook';
+
+export interface IntegrationRow {
+  platform: string;
+  connector: ConnectorId;
+  config: Record<string, string>;
+  enabled: number;
+  lastTestedAt: string | null;
+  lastTestOk: number | null;
+  updatedAt: string | null;
+}
+
+export interface PublishResult {
+  ok: boolean;
+  publishedUrl?: string;  // vuoto per gli scheduler (pubblicano loro allo slot)
+  error?: string;
+}
+
+// Riga variante come letta dal DB (campi JSON ancora serializzati).
+export interface VariantRow {
+  id: string;
+  masterId: string;
+  platform: string;
+  angle: string;
+  title: string;
+  body: string;
+  mediaSuggestion: string;
+  link: string;
+  anchorText: string;
+  utm: string;
+  hashtags: string;
+  category: string;
+  tags: string;
+  cta: string;
+  opNotes: string;
+  publishMethod: PublishMethod;
+  riskScore: number;
+  riskFlags: string;
+  status: VariantStatus;
+  scheduledAt: string | null;
+  createdAt: string;
+  attempts: number;
+  lastError: string | null;
+}
+
+export interface Publisher {
+  // Pubblica la variante tramite l'integrazione configurata.
+  publish(variant: VariantRow, config: Record<string, string>): Promise<PublishResult>;
+  // Verifica credenziali/raggiungibilità senza pubblicare contenuti reali.
+  test(config: Record<string, string>): Promise<PublishResult>;
+}

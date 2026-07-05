@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, X, Copy, AlertTriangle, Clock, Package } from 'lucide-react';
+import { Check, X, Copy, AlertTriangle, Clock, Package, Zap } from 'lucide-react';
 import { PlatformVariant, VariantStatus } from '../types';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -19,13 +19,14 @@ const METHOD_LABEL: Record<string, string> = {
   manual_guided: 'Manuale guidato',
 };
 
-const FILTERS: Array<VariantStatus | 'all'> = ['all', 'pending_approval', 'draft', 'scheduled', 'published', 'skipped'];
+const FILTERS: Array<VariantStatus | 'all'> = ['all', 'pending_approval', 'draft', 'scheduled', 'published', 'failed', 'skipped'];
 
 export function Drafts() {
   const [variants, setVariants] = useState<PlatformVariant[]>([]);
   const [filter, setFilter] = useState<VariantStatus | 'all'>('all');
   const [selected, setSelected] = useState<PlatformVariant | null>(null);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () => {
     const q = filter === 'all' ? '' : `?status=${filter}`;
@@ -34,14 +35,23 @@ export function Drafts() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [filter]);
 
-  const act = async (id: string, action: 'approve' | 'reject' | 'publish-manual') => {
+  const act = async (id: string, action: 'approve' | 'reject' | 'publish-manual' | 'publish-now') => {
+    setError(null);
     const body = action === 'publish-manual' ? { author: 'operator' } : {};
-    await fetch(`/api/variants/${id}/${action}`, {
+    const res = await fetch(`/api/variants/${id}/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      setError(json.error || `Errore ${res.status}`);
+    }
     load();
     setSelected(null);
   };
+
+  // Pubblicazione via connettore: solo varianti approvate con metodo API/scheduler.
+  const canPublishNow = (v: PlatformVariant) =>
+    v.status === 'scheduled' && (v.publishMethod === 'api' || v.publishMethod === 'scheduler');
 
   const copyPackage = (v: PlatformVariant) => {
     const pkg = [
@@ -69,6 +79,12 @@ export function Drafts() {
           Rivedi le varianti generate, approva quelle rischiose e copia il pacchetto per la pubblicazione (API, scheduler o manuale). Nessuna pubblicazione automatica dal browser.
         </p>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
@@ -116,6 +132,9 @@ export function Drafts() {
                     {(v.status === 'pending_approval' || v.status === 'draft') && (
                       <button title="Approva" onClick={() => act(v.id, 'approve')} className="p-1.5 text-emerald-600 hover:text-emerald-800"><Check className="h-4 w-4" /></button>
                     )}
+                    {canPublishNow(v) && (
+                      <button title="Pubblica ora via API/scheduler" onClick={() => act(v.id, 'publish-now')} className="p-1.5 text-indigo-600 hover:text-indigo-800"><Zap className="h-4 w-4" /></button>
+                    )}
                     {v.status !== 'published' && v.status !== 'skipped' && (
                       <button title="Rifiuta" onClick={() => act(v.id, 'reject')} className="p-1.5 text-red-500 hover:text-red-700"><X className="h-4 w-4" /></button>
                     )}
@@ -150,6 +169,7 @@ export function Drafts() {
               {selected.link && <Field label="Link (con UTM)" value={selected.link} />}
               <Field label="Media suggerito" value={selected.mediaSuggestion} />
               <Field label="Note operative" value={selected.opNotes} />
+              {selected.lastError && <Field label="Ultimo errore di pubblicazione" value={selected.lastError} />}
               {selected.riskFlags?.length > 0 && (
                 <div>
                   <div className="text-xs font-semibold uppercase text-slate-400 mb-1">Segnali di rischio ({selected.riskScore})</div>
@@ -164,6 +184,9 @@ export function Drafts() {
               <div className="flex gap-2">
                 {(selected.status === 'pending_approval' || selected.status === 'draft') && (
                   <button onClick={() => act(selected.id, 'approve')} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg"><Check className="h-4 w-4" /> Approva</button>
+                )}
+                {canPublishNow(selected) && (
+                  <button onClick={() => act(selected.id, 'publish-now')} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg"><Zap className="h-4 w-4" /> Pubblica via API</button>
                 )}
                 {selected.status !== 'published' && (
                   <button onClick={() => act(selected.id, 'publish-manual')} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg"><Clock className="h-4 w-4" /> Segna pubblicato</button>

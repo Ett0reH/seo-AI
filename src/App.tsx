@@ -10,6 +10,7 @@ import { MasterContent } from './pages/MasterContent';
 import { Drafts } from './pages/Drafts';
 import { Tracking } from './pages/Tracking';
 import { Reports } from './pages/Reports';
+import { Integrations } from './pages/Integrations';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="drafts" element={<Drafts />} />
           <Route path="tracking" element={<Tracking />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="integrations" element={<Integrations />} />
           <Route path="plugin" element={<PluginDownload />} />
           <Route path="settings" element={<Settings />} />
         </Route>

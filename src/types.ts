@@ -89,6 +89,21 @@ export interface PlatformVariant {
   status: VariantStatus;
   scheduledAt: string | null;
   createdAt: string;
+  attempts?: number;
+  lastError?: string | null;
+}
+
+// ── Integrazioni di pubblicazione (MVP-2) ─────────────────────
+
+export interface Integration {
+  platform: string;
+  platformName: string;
+  publishMethod: string;
+  connector: 'devto' | 'wordpress' | 'github' | 'webhook';
+  enabled: boolean;
+  config: Record<string, string>;
+  lastTestedAt: string | null;
+  lastTestOk: boolean | null;
 }
 
 export interface OperationalReport {

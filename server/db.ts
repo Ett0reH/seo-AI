@@ -130,7 +130,32 @@ db.exec(`
     details TEXT,         -- JSON
     createdAt TEXT
   );
+
+  -- ============================================================
+  -- Integrazioni di pubblicazione (MVP-2)
+  -- Solo API ufficiali e scheduler autorizzati: nessun browser.
+  -- ============================================================
+  CREATE TABLE IF NOT EXISTS integrations (
+    platform TEXT PRIMARY KEY,  -- id piattaforma (platforms.id)
+    connector TEXT,             -- devto | wordpress | github | webhook
+    config TEXT,                -- JSON credenziali/parametri
+    enabled INTEGER DEFAULT 0,
+    lastTestedAt TEXT,
+    lastTestOk INTEGER,
+    updatedAt TEXT
+  );
 `);
+
+// Migrazione MVP-2: colonne retry sul le varianti (idempotente su DB esistenti).
+{
+  const cols = db.prepare('PRAGMA table_info(platform_variants)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'attempts')) {
+    db.exec('ALTER TABLE platform_variants ADD COLUMN attempts INTEGER DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'lastError')) {
+    db.exec('ALTER TABLE platform_variants ADD COLUMN lastError TEXT');
+  }
+}
 
 // Seed mock data if empty
 const sitesCount = db.prepare('SELECT COUNT(*) as c FROM sites').get() as { c: number };

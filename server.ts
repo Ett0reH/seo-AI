@@ -5,9 +5,11 @@ import crypto from 'crypto';
 import { db } from './server/db';
 import { analyzeContent } from './server/ai';
 import { runDistributionPipeline } from './server/orchestrator/pipeline';
+import { startPublishWorker, executePublish } from './server/orchestrator/publishWorker';
+import { DEFAULT_CONNECTOR, getIntegration, testIntegration, isAutoPublishable } from './server/publishers';
 import { buildReport } from './server/agents/report';
 import { logAction } from './server/lib/audit';
-import type { VariantStatus } from './server/types';
+import type { VariantStatus, VariantRow } from './server/types';
 
 const SHARED_SECRET = process.env.SAAS_SHARED_SECRET || 'sk_live_1234567890abcdef';
 
@@ -196,6 +198,89 @@ async function startServer() {
     );
     logAction('publication', pub.id, 'tracking_updated', 'user', { clicks, referral });
     res.json({ success: true });
+  });
+
+  // ============================================================
+  // Integrazioni di pubblicazione (MVP-2) — solo API/scheduler autorizzati.
+  // ============================================================
+
+  const SECRET_KEYS = ['apiKey', 'appPassword', 'token', 'secret'];
+  const maskSecret = (v: string) => (v.length > 4 ? '••••' + v.slice(-4) : '••••');
+  const maskConfig = (config: Record<string, string>) => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(config)) {
+      out[k] = SECRET_KEYS.includes(k) && v ? maskSecret(v) : v;
+    }
+    return out;
+  };
+
+  // Stato integrazioni per tutte le piattaforme pubblicabili automaticamente.
+  app.get('/api/integrations', (req, res) => {
+    const platforms = db.prepare('SELECT id, name, publishMethod FROM platforms').all() as any[];
+    const rows = Object.keys(DEFAULT_CONNECTOR).map((platformId) => {
+      const platform = platforms.find((p) => p.id === platformId);
+      const saved = getIntegration(platformId);
+      return {
+        platform: platformId,
+        platformName: platform?.name || platformId,
+        publishMethod: platform?.publishMethod || '',
+        connector: saved?.connector || DEFAULT_CONNECTOR[platformId],
+        enabled: Boolean(saved?.enabled),
+        config: maskConfig(saved?.config || {}),
+        lastTestedAt: saved?.lastTestedAt || null,
+        lastTestOk: saved ? saved.lastTestOk === 1 : null,
+      };
+    });
+    res.json(rows);
+  });
+
+  // Salva/aggiorna configurazione: i segreti mascherati non sovrascrivono quelli salvati.
+  app.put('/api/integrations/:platform', (req, res) => {
+    const platformId = req.params.platform;
+    if (!(platformId in DEFAULT_CONNECTOR)) {
+      return res.status(400).json({ error: 'Piattaforma non pubblicabile automaticamente (solo API/scheduler autorizzati)' });
+    }
+    const { enabled, config } = req.body || {};
+    const existing = getIntegration(platformId);
+    const merged: Record<string, string> = { ...(existing?.config || {}) };
+    for (const [k, v] of Object.entries((config || {}) as Record<string, string>)) {
+      if (typeof v !== 'string') continue;
+      if (SECRET_KEYS.includes(k) && v.startsWith('••••')) continue; // valore mascherato: mantieni
+      merged[k] = v;
+    }
+    db.prepare(
+      `INSERT INTO integrations (platform, connector, config, enabled, updatedAt)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(platform) DO UPDATE SET config=excluded.config, enabled=excluded.enabled, updatedAt=excluded.updatedAt`
+    ).run(platformId, DEFAULT_CONNECTOR[platformId], JSON.stringify(merged), enabled ? 1 : 0, new Date().toISOString());
+    logAction('integration', platformId, 'integration_updated', 'user', { enabled: Boolean(enabled) });
+    res.json({ success: true });
+  });
+
+  // Test connettività/credenziali senza pubblicare contenuti reali.
+  app.post('/api/integrations/:platform/test', async (req, res) => {
+    const platformId = req.params.platform;
+    const result = await testIntegration(platformId);
+    db.prepare('UPDATE integrations SET lastTestedAt = ?, lastTestOk = ? WHERE platform = ?')
+      .run(new Date().toISOString(), result.ok ? 1 : 0, platformId);
+    logAction('integration', platformId, 'integration_tested', 'user', { ok: result.ok, error: result.error });
+    res.json(result);
+  });
+
+  // Pubblicazione IMMEDIATA via connettore. Gate invariato: solo varianti già
+  // approvate (stato 'scheduled') e con metodo api/scheduler.
+  app.post('/api/variants/:id/publish-now', async (req, res) => {
+    const variant = db.prepare('SELECT * FROM platform_variants WHERE id = ?').get(req.params.id) as VariantRow | undefined;
+    if (!variant) return res.status(404).json({ error: 'Variante non trovata' });
+    if (variant.status !== 'scheduled') {
+      return res.status(400).json({ error: 'Solo varianti approvate (stato "scheduled") possono essere pubblicate via API' });
+    }
+    if (!isAutoPublishable(variant.platform, variant.publishMethod)) {
+      return res.status(400).json({ error: 'Piattaforma non pubblicabile automaticamente: usa il pacchetto manuale' });
+    }
+    const outcome = await executePublish(variant, 'user');
+    if (!outcome.ok) return res.status(502).json({ error: outcome.error });
+    res.json({ success: true, publicationId: outcome.publicationId });
   });
 
   // Report operativo aggregato.
@@ -398,6 +483,9 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Worker MVP-2: pubblica le varianti approvate allo slot, via API/scheduler autorizzati.
+  startPublishWorker();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);

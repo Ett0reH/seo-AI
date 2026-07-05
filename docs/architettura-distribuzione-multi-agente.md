@@ -156,6 +156,11 @@ pubblicare nulla.
 Per lo scheduling esterno (MVP-2): un unico **adapter webhook** verso Make/n8n/Publer
 che riceve il pacchetto della variante e restituisce l'esito, senza browser.
 
+Stato di implementazione (MVP-2): connettori attivi in `server/publishers/` per
+**Dev.to**, **WordPress REST**, **GitHub** e **webhook firmato** (LinkedIn
+aziendale, Instagram, Facebook, YouTube via scheduler autorizzato). Config e
+credenziali nella tabella `integrations`, UI in *Integrazioni*.
+
 ---
 
 ## 6. Sistema di approvazione umana
@@ -219,11 +224,25 @@ Pipeline completa Master→…→Scheduler; varianti come bozze; approvazione um
 copia pacchetto; pubblicazione e tracking manuali; report base; audit log.
 Nessuna pubblicazione automatica: ci si ferma a "bozza pronta".
 
-**MVP-2 — Integrazione API/scheduler.**
-Publishing Router attivo: adapter per WordPress/Dev.to/Hashnode/GitHub/YouTube via
-API ufficiali; adapter webhook verso Make/n8n/Publer per social; scheduling reale
-che rispetta gli slot; retry/`failed`; gestione credenziali (OAuth) fuori dal
-browser.
+**MVP-2 — Integrazione API/scheduler (implementato in questo repo).**
+Publishing Router attivo con connettori reali in `server/publishers/`:
+
+- **Dev.to** (Forem API, api-key), **WordPress** (REST API + application
+  password), **GitHub** (REST API `contents`, PAT) → pubblicazione diretta.
+- **Webhook firmato HMAC-SHA256** verso scheduler autorizzati (Make / n8n /
+  Publer) per LinkedIn aziendale, Instagram, Facebook e YouTube: il sistema
+  invia il pacchetto, lo scheduler autorizzato pubblica allo slot.
+- **Worker di pubblicazione** (`server/orchestrator/publishWorker.ts`): ogni
+  minuto pubblica al massimo UNA variante con slot scaduto (mai due nello
+  stesso minuto), solo se in stato `scheduled` (già approvata) con metodo
+  `api`/`scheduler` e integrazione abilitata. Retry con backoff (15 min ×
+  tentativi, max 3) poi stato `failed` con `lastError`.
+- **Gestione credenziali** in tabella `integrations` (server-side, mai nel
+  browser); la UI *Integrazioni* mostra i segreti mascherati e offre un test
+  di connettività senza pubblicare. `POST /api/variants/:id/publish-now` per
+  la pubblicazione immediata, con lo stesso gate di approvazione.
+- Le piattaforme `semi_automatic`/`manual_guided` restano SENZA connettore:
+  mai pubblicabili automaticamente.
 
 **MVP-3 — SEO/LLM visibility + ottimizzazione.**
 `seoVisibility.ts` attivo: indicizzazione (Search Console/Bing API), menzioni
@@ -268,7 +287,7 @@ Coerente con il repo esistente:
 ```
 server/
   ai.ts                      # esistente — analisi JSON-LD WordPress (invariato)
-  db.ts                      # + master_contents, platforms, platform_variants, publications, audit_log
+  db.ts                      # + master_contents, platforms, platform_variants, publications, audit_log, integrations
   types.ts                   # tipi condivisi degli agenti
   agents/
     geminiClient.ts          # client Gemini condiviso
@@ -283,10 +302,13 @@ server/
     seoVisibility.ts         # stub MVP-3
   orchestrator/
     pipeline.ts              # runDistributionPipeline()
+    publishWorker.ts         # MVP-2: pubblicazione reale allo slot (1/min max)
+  publishers/                # MVP-2: connettori (solo API/scheduler autorizzati)
+    devto.ts  wordpress.ts  github.ts  webhook.ts  index.ts
   lib/
     utm.ts  anchors.ts  scheduling.ts  audit.ts
 src/
-  pages/  MasterContent.tsx  Drafts.tsx  Tracking.tsx  Reports.tsx
+  pages/  MasterContent.tsx  Drafts.tsx  Tracking.tsx  Reports.tsx  Integrations.tsx
 docs/
   architettura-distribuzione-multi-agente.md
 ```
