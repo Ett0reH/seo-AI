@@ -5,10 +5,13 @@ import type { AdaptedContent, MasterContext, PlatformConfig, SemanticAngle } fro
 // Platform Adapter Agent
 // Adatta tono, formato, lunghezza, hashtag, titolo, CTA e struttura in base
 // alla piattaforma e al suo linkPolicy. Produce contenuto NATIVO, non un copia-incolla.
+// insights (MVP-3, opzionale): dati di performance dal feedback loop di visibilità,
+// usati per rigenerare una variante migliorata.
 export async function adaptToPlatform(
   master: MasterContext,
   platform: PlatformConfig,
-  angle: SemanticAngle
+  angle: SemanticAngle,
+  insights?: string
 ): Promise<AdaptedContent> {
   const a = master.analysis;
   const lengthHint = platform.maxLength > 0 ? `Lunghezza massima ~${platform.maxLength} caratteri.` : 'Nessun limite stretto di lunghezza.';
@@ -32,7 +35,7 @@ ANGOLO DA SVILUPPARE (unico per questa piattaforma): ${angle.angle}
 PUNTI CHIAVE: ${angle.keyPoints.join('; ')}
 PUBBLICO: ${a.audience}
 CTA DI RIFERIMENTO (adattala, non copiarla): ${a.cta}
-
+${insights ? `\nINSIGHTS DI PERFORMANCE (usa questi dati per migliorare il contenuto):\n${insights}\n` : ''}
 Produci:
 - title: titolo/hook nativo per la piattaforma
 - body: il testo completo, pronto e nativo (rispetta tono e lunghezza)

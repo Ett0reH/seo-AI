@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, AlertTriangle, Lightbulb } from 'lucide-react';
+import { BarChart3, AlertTriangle, Lightbulb, ScanSearch } from 'lucide-react';
 import { OperationalReport } from '../types';
 
 export function Reports() {
@@ -62,6 +62,33 @@ export function Reports() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {report.visibility && (
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+            <ScanSearch className="h-4 w-4 text-indigo-600" /> Visibilità SEO/LLM
+            {!report.visibility.enabled && <span className="text-xs font-normal text-slate-500">(integrazione non attiva)</span>}
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Stat label="Pubblicazioni verificate" value={report.visibility.checkedPublications} />
+            <Stat label="Presenti in SERP" value={report.visibility.serpPresent} />
+            <Stat label="Score medio visibilità" value={report.visibility.avgScore} />
+          </div>
+          {report.visibility.topAngles.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">Angoli più performanti</h3>
+              <div className="space-y-2">
+                {report.visibility.topAngles.map((a, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm gap-3">
+                    <span className="text-slate-600 truncate" title={a.angle}>{a.angle}</span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap">{a.platform} · {a.clicks} click{a.score !== null ? ` · score ${a.score}` : ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

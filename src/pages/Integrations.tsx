@@ -3,7 +3,7 @@ import { Plug, Save, FlaskConical, CheckCircle2, XCircle, Loader2 } from 'lucide
 import { Integration } from '../types';
 
 // Campi di configurazione per connettore (i segreti arrivano mascherati dal server).
-const CONNECTOR_FIELDS: Record<string, Array<{ key: string; label: string; secret?: boolean; placeholder: string }>> = {
+const CONNECTOR_FIELDS: Record<string, Array<{ key: string; label: string; secret?: boolean; multiline?: boolean; placeholder: string }>> = {
   devto: [
     { key: 'apiKey', label: 'API key Dev.to', secret: true, placeholder: 'dal profilo Dev.to → Settings → Extensions' },
   ],
@@ -24,6 +24,19 @@ const CONNECTOR_FIELDS: Record<string, Array<{ key: string; label: string; secre
     { key: 'webhookUrl', label: 'URL webhook scheduler', placeholder: 'https://hook.make.com/... (Make/n8n/Publer)' },
     { key: 'secret', label: 'Segreto firma HMAC (opzionale)', secret: true, placeholder: 'condiviso con lo scheduler' },
   ],
+  // MVP-3: pseudo-integrazioni di configurazione (non pubblicano nulla).
+  gemini: [
+    { key: 'brand', label: 'Nome brand da cercare', placeholder: 'Il Mio Brand' },
+    { key: 'siteDomain', label: 'Dominio del sito principale', placeholder: 'miosito.it' },
+    { key: 'profileUrl', label: 'URL profilo target (opzionale)', placeholder: 'https://linkedin.com/in/...' },
+    { key: 'intervalHours', label: 'Ore tra un check e il successivo', placeholder: '24' },
+    { key: 'autoOptimize', label: 'Auto-ottimizzazione bozze (true/false)', placeholder: 'false' },
+    { key: 'maxDailyChecks', label: 'Massimo check al giorno', placeholder: '40' },
+  ],
+  gsc: [
+    { key: 'serviceAccountJson', label: 'Service account JSON (GCP)', secret: true, multiline: true, placeholder: '{"type":"service_account",...} — aggiungi la sua email come utente della property' },
+    { key: 'property', label: 'Property Search Console', placeholder: 'sc-domain:miosito.it oppure https://miosito.it/' },
+  ],
 };
 
 const CONNECTOR_LABEL: Record<string, string> = {
@@ -31,6 +44,8 @@ const CONNECTOR_LABEL: Record<string, string> = {
   wordpress: 'WordPress REST API',
   github: 'GitHub REST API',
   webhook: 'Webhook → scheduler autorizzato',
+  gemini: 'Gemini + Google Search grounding (misura, non pubblica)',
+  gsc: 'Google Search Console — URL Inspection (misura, non pubblica)',
 };
 
 export function Integrations() {
@@ -111,13 +126,23 @@ export function Integrations() {
                 {CONNECTOR_FIELDS[it.connector].map((f) => (
                   <div key={f.key}>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{f.label}</label>
-                    <input
-                      type={f.secret ? 'password' : 'text'}
-                      value={fieldValue(it, f.key)}
-                      onChange={(e) => setField(it.platform, f.key, e.target.value)}
-                      placeholder={f.placeholder}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
+                    {f.multiline ? (
+                      <textarea
+                        rows={4}
+                        value={fieldValue(it, f.key)}
+                        onChange={(e) => setField(it.platform, f.key, e.target.value)}
+                        placeholder={f.placeholder}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                      />
+                    ) : (
+                      <input
+                        type={f.secret ? 'password' : 'text'}
+                        value={fieldValue(it, f.key)}
+                        onChange={(e) => setField(it.platform, f.key, e.target.value)}
+                        placeholder={f.placeholder}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    )}
                   </div>
                 ))}
               </div>

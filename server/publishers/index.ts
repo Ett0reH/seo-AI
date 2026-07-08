@@ -5,18 +5,24 @@
 // connettore e non sono mai pubblicabili automaticamente: restano al
 // flusso di approvazione + pacchetto manuale dell'MVP-1.
 
-import { db } from '../db';
 import { devtoPublisher } from './devto';
 import { wordpressPublisher } from './wordpress';
 import { githubPublisher } from './github';
 import { webhookPublisher } from './webhook';
-import type { ConnectorId, IntegrationRow, Publisher, PublishMethod, PublishResult, VariantRow } from '../types';
+import { gscConnector } from '../lib/gsc';
+import { geminiVisibilityConnector } from '../agents/seoVisibility';
+import { getIntegration } from '../lib/integrations';
+import type { ConnectorId, Publisher, PublishMethod, PublishResult, VariantRow } from '../types';
+
+export { getIntegration };
 
 const CONNECTORS: Record<ConnectorId, Publisher> = {
   devto: devtoPublisher,
   wordpress: wordpressPublisher,
   github: githubPublisher,
   webhook: webhookPublisher,
+  gemini: geminiVisibilityConnector, // MVP-3: sola configurazione, non pubblica
+  gsc: gscConnector,                 // MVP-3: sola configurazione, non pubblica
 };
 
 // Connettore di default per le sole piattaforme con metodo api/scheduler.
@@ -31,16 +37,15 @@ export const DEFAULT_CONNECTOR: Record<string, ConnectorId> = {
   facebook: 'webhook',
 };
 
+// Pseudo-integrazioni di configurazione (MVP-3): NON sono piattaforme di
+// pubblicazione e restano fuori da DEFAULT_CONNECTOR/isAutoPublishable.
+export const SETTINGS_CONNECTORS: Record<string, ConnectorId> = {
+  visibility: 'gemini',
+  search_console: 'gsc',
+};
+
 export function isAutoPublishable(platformId: string, method: PublishMethod): boolean {
   return (method === 'api' || method === 'scheduler') && platformId in DEFAULT_CONNECTOR;
-}
-
-export function getIntegration(platformId: string): IntegrationRow | null {
-  const row = db.prepare('SELECT * FROM integrations WHERE platform = ?').get(platformId) as any;
-  if (!row) return null;
-  let config: Record<string, string> = {};
-  try { config = JSON.parse(row.config || '{}'); } catch { /* config corrotta → vuota */ }
-  return { ...row, config };
 }
 
 export async function publishVariant(variant: VariantRow): Promise<PublishResult> {

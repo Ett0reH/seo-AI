@@ -78,8 +78,8 @@ invariati.
 | **Draft Package** | `server/agents/draftPackage.ts` | Assembla il pacchetto pubblicabile + stato iniziale + note operative. | 1 |
 | **Scheduler** | `server/agents/scheduler.ts` | Propone finestra naturale 24–72h evitando simultaneità. | 1 |
 | **Tracking** | endpoint `/api/tracking` + `publications` | Registra piattaforma, URL, UTM, engagement, click, referral, screenshot, note. | 1 |
-| **SEO/LLM Visibility** | `server/agents/seoVisibility.ts` (stub) | Indicizzazione, citazioni brand, SERP, authority, entity matching. | 3 |
-| **Report** | `server/agents/report.ts` | Report operativo: pubblicati/bozze/da approvare, errori, piattaforme efficaci, rischi, raccomandazioni. | 1 |
+| **SEO/LLM Visibility** | `server/agents/seoVisibility.ts` | Presenza SERP e menzioni (Gemini + Google Search grounding), citazioni LLM "a memoria", entity matching, indicizzazione GSC. | 3 |
+| **Report** | `server/agents/report.ts` | Report operativo: pubblicati/bozze/da approvare, errori, piattaforme efficaci, rischi, visibilità, raccomandazioni. | 1 |
 
 **Orchestratore** (`server/orchestrator/pipeline.ts`): esegue la catena
 `Master → Splitter → Adapter → Compliance → Router → DraftPackage → Scheduler`,
@@ -244,10 +244,47 @@ Publishing Router attivo con connettori reali in `server/publishers/`:
 - Le piattaforme `semi_automatic`/`manual_guided` restano SENZA connettore:
   mai pubblicabili automaticamente.
 
-**MVP-3 — SEO/LLM visibility + ottimizzazione.**
-`seoVisibility.ts` attivo: indicizzazione (Search Console/Bing API), menzioni
-brand/profilo, SERP, entity matching, segnali authority. Feedback loop: il Report
-suggerisce e (opzionalmente) ottimizza automaticamente gli angoli più performanti.
+**MVP-3 — SEO/LLM visibility + ottimizzazione (implementato in questo repo).**
+`seoVisibility.ts` attivo, solo API ufficiali (mai browser/scraping):
+
+- **Presenza SERP e menzioni brand**: Gemini + **Google Search grounding**
+  (`tools: [{ googleSearch: {} }]`). Il tool non è combinabile con
+  `responseSchema` sul modello in uso → i segnali si estraggono in modo
+  deterministico da testo + `groundingMetadata` (`groundingChunks`,
+  `webSearchQueries`, `groundingSupports`). Nota: `web.uri` è un redirect
+  vertexaisearch, il dominio della fonte si legge da `title`/`domain`.
+- **Visibilità LLM "a memoria"**: seconda chiamata NON grounded che chiede al
+  modello cosa sa del brand SENZA cercare → `llmCited` + entity matching con
+  le entità del master.
+- **Indicizzazione**: Google Search Console **URL Inspection API** (service
+  account, JWT RS256 fatto a mano in `lib/googleAuth.ts`, scope readonly).
+  Limite strutturale: funziona SOLO su property di proprietà → verifica il
+  sito del master, non gli URL su piattaforme terze (per quelli vale il
+  segnale SERP grounded). **Bing Webmaster: rinviato.**
+- **Score 0–100**: pubblicazione = SERP 55 + menzioni ≤25 + sito tra le fonti
+  20; master = SERP 30 + menzioni ≤20 + citazione LLM 30 + entity match ≤20
+  (`indexedGsc` è un badge separato, fuori dallo score).
+- **Worker** (`server/orchestrator/visibilityWorker.ts`): ogni 10 minuti al
+  massimo UN check (controllo costi), solo se la pseudo-integrazione
+  `visibility` è abilitata, con cap giornaliero (`maxDailyChecks`, default 40)
+  e intervallo per elemento (`intervalHours`, default 24). Check falliti
+  persistiti con `status='failed'` e ritentati al prossimo intervallo.
+- **Config come pseudo-integrazioni** nella tabella `integrations`
+  (riuso di UI, masking segreti, test): riga `visibility` (connector `gemini`)
+  e riga `search_console` (connector `gsc`), mappa separata
+  `SETTINGS_CONNECTORS` → mai confuse con le piattaforme pubblicabili.
+- **Feedback loop**: `POST /api/variants/:id/reoptimize` (o auto con
+  `autoOptimize='true'`) rigenera UNA variante ottimizzata usando gli insight
+  degli angoli migliori (click + score, solo SQL). Guardrail: solo varianti
+  `published`, mai due volte la stessa (colonna lineage `optimizedFromId`),
+  max 3 auto-ottimizzazioni per master, la nuova variante nasce
+  `draft`/`pending_approval` via `initialStatus()` → **il gate di approvazione
+  umana è preservato strutturalmente** (il publishWorker pesca solo
+  `scheduled`). La risposta grounded (`answerText`) resta in DB per audit e
+  non viene mostrata in UI (requisito ToS grounding).
+- **UI**: pagina *Visibilità SEO/LLM* (KPI, tabella pubblicazioni con
+  "Verifica ora"/"Rigenera ottimizzata", card master con badge LLM/GSC e
+  entity chips); sezione visibilità e "angoli più performanti" nel Report.
 
 ---
 
@@ -277,8 +314,10 @@ Coerente con il repo esistente:
 - **AI**: `@google/genai` (Gemini `gemini-3-flash-preview`), output JSON strutturato.
 - **Frontend**: React 19 + Vite + Tailwind 4 + react-router.
 - **Scheduling esterno (MVP-2)**: Make / n8n / Publer via webhook.
-- **Visibility (MVP-3)**: Google Search Console API, Bing Webmaster API, provider di
-  mentions — **tutti via API, nessun browser**.
+- **Visibility (MVP-3)**: Gemini + Google Search grounding (SERP/menzioni),
+  Gemini non-grounded (citazioni LLM), Google Search Console URL Inspection
+  (indicizzazione, service account) — **tutti via API, nessun browser**.
+  Bing Webmaster API: rinviata.
 
 ---
 
@@ -287,28 +326,34 @@ Coerente con il repo esistente:
 ```
 server/
   ai.ts                      # esistente — analisi JSON-LD WordPress (invariato)
-  db.ts                      # + master_contents, platforms, platform_variants, publications, audit_log, integrations
+  db.ts                      # + master_contents, platforms, platform_variants, publications,
+                             #   audit_log, integrations, visibility_checks (MVP-3)
   types.ts                   # tipi condivisi degli agenti
   agents/
-    geminiClient.ts          # client Gemini condiviso
+    geminiClient.ts          # client Gemini condiviso (+ generateGrounded MVP-3)
     contentMaster.ts
     semanticSplitter.ts
-    platformAdapter.ts
+    platformAdapter.ts       # + insights di performance (MVP-3)
     complianceRisk.ts
     publishingRouter.ts
     draftPackage.ts
     scheduler.ts
-    report.ts
-    seoVisibility.ts         # stub MVP-3
+    report.ts                # + sezione visibility e topAngles (MVP-3)
+    seoVisibility.ts         # MVP-3: checkPublication/checkMaster/score/insights
   orchestrator/
     pipeline.ts              # runDistributionPipeline()
     publishWorker.ts         # MVP-2: pubblicazione reale allo slot (1/min max)
+    visibilityWorker.ts      # MVP-3: 1 check/10min + reoptimizeVariant (feedback loop)
   publishers/                # MVP-2: connettori (solo API/scheduler autorizzati)
     devto.ts  wordpress.ts  github.ts  webhook.ts  index.ts
   lib/
     utm.ts  anchors.ts  scheduling.ts  audit.ts
+    integrations.ts          # lettura riga integrations (condivisa)
+    googleAuth.ts            # MVP-3: JWT RS256 service account (node:crypto)
+    gsc.ts                   # MVP-3: URL Inspection + connettore search_console
 src/
   pages/  MasterContent.tsx  Drafts.tsx  Tracking.tsx  Reports.tsx  Integrations.tsx
+          Visibility.tsx     # MVP-3
 docs/
   architettura-distribuzione-multi-agente.md
 ```
@@ -406,3 +451,21 @@ POST /variants/:id/publish-manual → createPublication(); setStatus(published)
       raccomandazioni corrette.
 - [ ] La UI permette il flusso completo Distribuzione → Bozze → Tracking → Report.
 - [ ] **Nessun** codice esegue browser automation / publisher / estensioni.
+
+Checklist MVP-3 (visibilità):
+
+- [ ] `GET /api/integrations` include `visibility` e `search_console`;
+      `serviceAccountJson` mascherato e preservato al re-save.
+- [ ] Con integrazione visibilità OFF: worker no-op, check manuale → 409.
+- [ ] Con ON: `POST /api/visibility/check/publication/:id` crea una riga `ok`
+      con fonti/score; senza rete o chiave → riga `failed`, nessun crash,
+      nessun retry immediato.
+- [ ] Pubblicazioni scheduler senza URL mai selezionate dal worker; il backfill
+      dell'URL dal Tracking le sblocca.
+- [ ] Cap giornaliero rispettato (`maxDailyChecks`).
+- [ ] `reoptimize` → nuova variante in bozza con `optimizedFromId` e UTM nuovi;
+      seconda chiamata → 409; il publishWorker non la pubblica mai da sola.
+- [ ] Con `autoOptimize='true'`: max 1 bozza per tick e 3 per master, actor
+      `system` in audit.
+- [ ] `GET /api/report` include la sezione `visibility` e gli angoli migliori.
+- [ ] `answerText` non compare in nessuna risposta API né in UI (solo DB).

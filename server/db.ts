@@ -144,6 +144,33 @@ db.exec(`
     lastTestOk INTEGER,
     updatedAt TEXT
   );
+
+  -- ============================================================
+  -- Visibilità SEO/LLM (MVP-3)
+  -- Check periodici su pubblicazioni e master: presenza SERP (Gemini +
+  -- Google Search grounding), menzioni brand, citazioni LLM, entity
+  -- matching, indicizzazione GSC. Solo API ufficiali, nessun browser.
+  -- ============================================================
+  CREATE TABLE IF NOT EXISTS visibility_checks (
+    id TEXT PRIMARY KEY,
+    scope TEXT,               -- publication | master
+    refId TEXT,               -- publications.id | master_contents.id
+    platform TEXT,            -- solo scope publication
+    url TEXT,                 -- URL verificato ('' se non applicabile)
+    serpPresence INTEGER,     -- 1|0|NULL: fonte propria tra i risultati grounded
+    brandMentions INTEGER DEFAULT 0,
+    llmCited INTEGER,         -- 1|0|NULL: brand citato dall'LLM a memoria (solo master)
+    indexedGsc INTEGER,       -- 1|0|NULL: verdetto URL Inspection (solo master con GSC)
+    entityMatches TEXT,       -- JSON {matched:string[], missing:string[]}
+    topSources TEXT,          -- JSON [{domain,title,matched}] max 8
+    queries TEXT,             -- JSON string[]: query eseguite dal grounding
+    answerText TEXT,          -- risposta grounded troncata (solo audit, mai in UI)
+    score INTEGER DEFAULT 0,  -- 0-100
+    status TEXT,              -- ok | failed
+    notes TEXT,
+    checkedAt TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_visibility_ref ON visibility_checks (scope, refId, checkedAt);
 `);
 
 // Migrazione MVP-2: colonne retry sul le varianti (idempotente su DB esistenti).
@@ -154,6 +181,10 @@ db.exec(`
   }
   if (!cols.some((c) => c.name === 'lastError')) {
     db.exec('ALTER TABLE platform_variants ADD COLUMN lastError TEXT');
+  }
+  // MVP-3: lineage delle varianti rigenerate dal feedback loop (mai due volte la stessa).
+  if (!cols.some((c) => c.name === 'optimizedFromId')) {
+    db.exec('ALTER TABLE platform_variants ADD COLUMN optimizedFromId TEXT');
   }
 }
 

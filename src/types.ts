@@ -99,7 +99,7 @@ export interface Integration {
   platform: string;
   platformName: string;
   publishMethod: string;
-  connector: 'devto' | 'wordpress' | 'github' | 'webhook';
+  connector: 'devto' | 'wordpress' | 'github' | 'webhook' | 'gemini' | 'gsc';
   enabled: boolean;
   config: Record<string, string>;
   lastTestedAt: string | null;
@@ -112,5 +112,71 @@ export interface OperationalReport {
   byStatus: Record<string, number>;
   byPlatform: Array<{ platform: string; variants: number; published: number; clicks: number }>;
   highRisk: Array<{ id: string; platform: string; riskScore: number; riskFlags: string[] }>;
+  visibility?: {
+    enabled: boolean;
+    checkedPublications: number;
+    serpPresent: number;
+    avgScore: number;
+    llmCitedMasters: number;
+    topAngles: Array<{ angle: string; platform: string; clicks: number; score: number | null }>;
+  };
   recommendations: string[];
+}
+
+// ── Visibilità SEO/LLM (MVP-3) ────────────────────────────────
+
+export interface VisibilityCheck {
+  id: string;
+  scope: 'publication' | 'master';
+  refId: string;
+  platform: string;
+  url: string;
+  serpPresence: number | null;
+  brandMentions: number;
+  llmCited: number | null;
+  indexedGsc: number | null;
+  entityMatches: { matched: string[]; missing: string[] };
+  topSources: Array<{ domain: string; title: string; matched: 'publication' | 'site' | null }>;
+  queries: string[];
+  score: number;
+  status: 'ok' | 'failed';
+  notes: string;
+  checkedAt: string;
+}
+
+export interface VisibilityOverview {
+  enabled: boolean;
+  config: {
+    brand: string;
+    siteDomain: string;
+    profileUrl?: string;
+    intervalHours?: string;
+    autoOptimize?: string;
+    maxDailyChecks?: string;
+  };
+  gscEnabled: boolean;
+  kpis: {
+    checkedPublications: number;
+    serpPresent: number;
+    avgScore: number;
+    llmCitedMasters: number;
+    checksToday: number;
+  };
+  publications: Array<{
+    publicationId: string;
+    variantId: string;
+    platform: string;
+    publishedUrl: string;
+    clicks: number;
+    title: string;
+    angle: string;
+    optimized: boolean;
+    check: VisibilityCheck | null;
+  }>;
+  masters: Array<{
+    id: string;
+    title: string;
+    theme: string;
+    check: VisibilityCheck | null;
+  }>;
 }

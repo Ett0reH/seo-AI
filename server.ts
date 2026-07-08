@@ -6,8 +6,10 @@ import { db } from './server/db';
 import { analyzeContent } from './server/ai';
 import { runDistributionPipeline } from './server/orchestrator/pipeline';
 import { startPublishWorker, executePublish } from './server/orchestrator/publishWorker';
-import { DEFAULT_CONNECTOR, getIntegration, testIntegration, isAutoPublishable } from './server/publishers';
+import { startVisibilityWorker, runVisibilityCheck, reoptimizeVariant } from './server/orchestrator/visibilityWorker';
+import { DEFAULT_CONNECTOR, SETTINGS_CONNECTORS, getIntegration, testIntegration, isAutoPublishable } from './server/publishers';
 import { buildReport } from './server/agents/report';
+import { getVisibilityConfig } from './server/agents/seoVisibility';
 import { logAction } from './server/lib/audit';
 import type { VariantStatus, VariantRow } from './server/types';
 
@@ -183,10 +185,12 @@ async function startServer() {
   });
 
   // Aggiorna metriche/engagement di una pubblicazione tracciata manualmente.
+  // publishedUrl opzionale (MVP-3): backfill dell'URL per le pubblicazioni via
+  // scheduler (nascono senza URL) → abilita i check di visibilità.
   app.post('/api/tracking/:variantId', (req, res) => {
     const pub = db.prepare('SELECT * FROM publications WHERE variantId = ? ORDER BY publishedAt DESC LIMIT 1').get(req.params.variantId) as any;
     if (!pub) return res.status(404).json({ error: 'Nessuna pubblicazione trovata per questa variante' });
-    const { engagement, clicks, referral, notes } = req.body || {};
+    const { engagement, clicks, referral, notes, publishedUrl } = req.body || {};
     db.prepare(
       `UPDATE publications SET engagement = ?, clicks = ?, referral = ?, notes = COALESCE(?, notes) WHERE id = ?`
     ).run(
@@ -196,6 +200,9 @@ async function startServer() {
       notes ?? null,
       pub.id
     );
+    if (typeof publishedUrl === 'string' && publishedUrl.trim()) {
+      db.prepare('UPDATE publications SET publishedUrl = ? WHERE id = ?').run(publishedUrl.trim(), pub.id);
+    }
     logAction('publication', pub.id, 'tracking_updated', 'user', { clicks, referral });
     res.json({ success: true });
   });
@@ -204,7 +211,7 @@ async function startServer() {
   // Integrazioni di pubblicazione (MVP-2) — solo API/scheduler autorizzati.
   // ============================================================
 
-  const SECRET_KEYS = ['apiKey', 'appPassword', 'token', 'secret'];
+  const SECRET_KEYS = ['apiKey', 'appPassword', 'token', 'secret', 'serviceAccountJson'];
   const maskSecret = (v: string) => (v.length > 4 ? '••••' + v.slice(-4) : '••••');
   const maskConfig = (config: Record<string, string>) => {
     const out: Record<string, string> = {};
@@ -214,17 +221,24 @@ async function startServer() {
     return out;
   };
 
+  // Piattaforme pubblicabili + pseudo-integrazioni di configurazione (MVP-3).
+  const ALL_CONNECTORS: Record<string, string> = { ...DEFAULT_CONNECTOR, ...SETTINGS_CONNECTORS };
+  const SETTINGS_LABEL: Record<string, string> = {
+    visibility: 'Visibilità SEO/LLM (Gemini)',
+    search_console: 'Google Search Console',
+  };
+
   // Stato integrazioni per tutte le piattaforme pubblicabili automaticamente.
   app.get('/api/integrations', (req, res) => {
     const platforms = db.prepare('SELECT id, name, publishMethod FROM platforms').all() as any[];
-    const rows = Object.keys(DEFAULT_CONNECTOR).map((platformId) => {
+    const rows = Object.keys(ALL_CONNECTORS).map((platformId) => {
       const platform = platforms.find((p) => p.id === platformId);
       const saved = getIntegration(platformId);
       return {
         platform: platformId,
-        platformName: platform?.name || platformId,
+        platformName: platform?.name || SETTINGS_LABEL[platformId] || platformId,
         publishMethod: platform?.publishMethod || '',
-        connector: saved?.connector || DEFAULT_CONNECTOR[platformId],
+        connector: saved?.connector || ALL_CONNECTORS[platformId],
         enabled: Boolean(saved?.enabled),
         config: maskConfig(saved?.config || {}),
         lastTestedAt: saved?.lastTestedAt || null,
@@ -237,7 +251,7 @@ async function startServer() {
   // Salva/aggiorna configurazione: i segreti mascherati non sovrascrivono quelli salvati.
   app.put('/api/integrations/:platform', (req, res) => {
     const platformId = req.params.platform;
-    if (!(platformId in DEFAULT_CONNECTOR)) {
+    if (!(platformId in ALL_CONNECTORS)) {
       return res.status(400).json({ error: 'Piattaforma non pubblicabile automaticamente (solo API/scheduler autorizzati)' });
     }
     const { enabled, config } = req.body || {};
@@ -252,7 +266,7 @@ async function startServer() {
       `INSERT INTO integrations (platform, connector, config, enabled, updatedAt)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(platform) DO UPDATE SET config=excluded.config, enabled=excluded.enabled, updatedAt=excluded.updatedAt`
-    ).run(platformId, DEFAULT_CONNECTOR[platformId], JSON.stringify(merged), enabled ? 1 : 0, new Date().toISOString());
+    ).run(platformId, ALL_CONNECTORS[platformId], JSON.stringify(merged), enabled ? 1 : 0, new Date().toISOString());
     logAction('integration', platformId, 'integration_updated', 'user', { enabled: Boolean(enabled) });
     res.json({ success: true });
   });
@@ -286,6 +300,117 @@ async function startServer() {
   // Report operativo aggregato.
   app.get('/api/report', (req, res) => {
     res.json(buildReport());
+  });
+
+  // ============================================================
+  // Visibilità SEO/LLM (MVP-3) — solo API ufficiali, nessun browser.
+  // ============================================================
+
+  const VISIBILITY_JSON_FIELDS = ['entityMatches', 'topSources', 'queries'];
+  // Ultimo check per un refId; answerText resta fuori dalla risposta (solo audit in DB).
+  const latestCheck = (scope: 'publication' | 'master', refId: string) => {
+    const row = db
+      .prepare('SELECT * FROM visibility_checks WHERE scope = ? AND refId = ? ORDER BY checkedAt DESC LIMIT 1')
+      .get(scope, refId) as any;
+    if (!row) return null;
+    const { answerText, ...rest } = row;
+    for (const f of VISIBILITY_JSON_FIELDS) {
+      if (typeof rest[f] === 'string') {
+        try { rest[f] = JSON.parse(rest[f]); } catch { /* lascia grezzo */ }
+      }
+    }
+    return rest;
+  };
+
+  // Panoramica: stato integrazione, KPI, pubblicazioni e master con l'ultimo check.
+  app.get('/api/visibility', (req, res) => {
+    const { enabled, cfg } = getVisibilityConfig();
+    const gsc = getIntegration('search_console');
+
+    const midnight = new Date();
+    midnight.setUTCHours(0, 0, 0, 0);
+    const checksToday = (db
+      .prepare('SELECT COUNT(*) c FROM visibility_checks WHERE checkedAt >= ?')
+      .get(midnight.toISOString()) as { c: number }).c;
+
+    const pubRows = db
+      .prepare(
+        `SELECT p.id AS publicationId, p.variantId, p.platform, p.publishedUrl, p.clicks,
+                v.title, v.angle,
+                EXISTS(SELECT 1 FROM platform_variants o WHERE o.optimizedFromId = v.id) AS optimized
+         FROM publications p
+         LEFT JOIN platform_variants v ON v.id = p.variantId
+         ORDER BY p.publishedAt DESC`
+      )
+      .all() as any[];
+    const publications = pubRows.map((r) => ({
+      ...r,
+      optimized: Boolean(r.optimized),
+      check: latestCheck('publication', r.publicationId),
+    }));
+
+    const masterRows = db
+      .prepare(
+        `SELECT m.id, m.title, m.theme FROM master_contents m
+         WHERE m.status = 'ready'
+           AND EXISTS (SELECT 1 FROM publications p JOIN platform_variants v ON v.id = p.variantId
+                       WHERE v.masterId = m.id)
+         ORDER BY m.createdAt DESC`
+      )
+      .all() as any[];
+    const masters = masterRows.map((m) => ({ ...m, check: latestCheck('master', m.id) }));
+
+    const checkedPubs = publications.filter((p) => p.check && p.check.status === 'ok');
+    res.json({
+      enabled,
+      config: { brand: cfg.brand, siteDomain: cfg.siteDomain, profileUrl: cfg.profileUrl, intervalHours: cfg.intervalHours, autoOptimize: cfg.autoOptimize, maxDailyChecks: cfg.maxDailyChecks },
+      gscEnabled: Boolean(gsc?.enabled),
+      kpis: {
+        checkedPublications: checkedPubs.length,
+        serpPresent: checkedPubs.filter((p) => p.check.serpPresence === 1).length,
+        avgScore: checkedPubs.length
+          ? Math.round(checkedPubs.reduce((s, p) => s + (p.check.score || 0), 0) / checkedPubs.length)
+          : 0,
+        llmCitedMasters: masters.filter((m) => m.check && m.check.llmCited === 1).length,
+        checksToday,
+      },
+      publications,
+      masters,
+    });
+  });
+
+  // Check manuale on-demand ("Verifica ora").
+  app.post('/api/visibility/check/:scope/:refId', async (req, res) => {
+    const scope = req.params.scope;
+    if (scope !== 'publication' && scope !== 'master') {
+      return res.status(400).json({ error: 'Scope non valido: usa publication o master' });
+    }
+    const { enabled } = getVisibilityConfig();
+    if (!enabled) {
+      return res.status(409).json({ error: 'Integrazione Visibilità non abilitata: attivala in Integrazioni' });
+    }
+    const table = scope === 'publication' ? 'publications' : 'master_contents';
+    const exists = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(req.params.refId);
+    if (!exists) return res.status(404).json({ error: 'Elemento non trovato' });
+
+    const outcome = await runVisibilityCheck(scope, req.params.refId, 'user');
+    if (!outcome.ok) return res.status(502).json({ error: outcome.error, checkId: outcome.checkId });
+    res.json({ success: true, check: latestCheck(scope, req.params.refId) });
+  });
+
+  // Feedback loop manuale: rigenera una variante ottimizzata (bozza da approvare).
+  app.post('/api/variants/:id/reoptimize', async (req, res) => {
+    const variant = db.prepare('SELECT id, status FROM platform_variants WHERE id = ?').get(req.params.id) as any;
+    if (!variant) return res.status(404).json({ error: 'Variante non trovata' });
+    if (variant.status !== 'published') {
+      return res.status(400).json({ error: 'Solo varianti pubblicate possono essere rigenerate dal feedback loop' });
+    }
+    const already = db.prepare('SELECT id FROM platform_variants WHERE optimizedFromId = ?').get(req.params.id);
+    if (already) return res.status(409).json({ error: 'Variante già ottimizzata: la nuova bozza è in Bozze & Approvazioni' });
+
+    const outcome = await reoptimizeVariant(req.params.id, 'user');
+    if (!outcome.ok) return res.status(502).json({ error: outcome.error });
+    res.json({ success: true, newVariantId: outcome.newVariantId });
   });
 
   // Configurazione piattaforme (per la UI).
@@ -486,6 +611,9 @@ async function startServer() {
 
   // Worker MVP-2: pubblica le varianti approvate allo slot, via API/scheduler autorizzati.
   startPublishWorker();
+
+  // Worker MVP-3: check di visibilità SEO/LLM (attivo solo se l'integrazione è abilitata).
+  startVisibilityWorker();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);

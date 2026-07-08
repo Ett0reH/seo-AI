@@ -80,8 +80,10 @@ export interface Utm {
 // ── Pubblicazione reale via API / scheduler autorizzati (MVP-2) ──
 // Vincolo: solo API ufficiali o webhook verso scheduler autorizzati.
 // Nessuna automazione browser in nessun connettore.
+// 'gemini' e 'gsc' (MVP-3) sono connettori di sola configurazione/lettura:
+// non pubblicano mai nulla.
 
-export type ConnectorId = 'devto' | 'wordpress' | 'github' | 'webhook';
+export type ConnectorId = 'devto' | 'wordpress' | 'github' | 'webhook' | 'gemini' | 'gsc';
 
 export interface IntegrationRow {
   platform: string;
@@ -124,6 +126,7 @@ export interface VariantRow {
   createdAt: string;
   attempts: number;
   lastError: string | null;
+  optimizedFromId?: string | null; // MVP-3: id della variante da cui è stata rigenerata
 }
 
 export interface Publisher {
@@ -131,4 +134,37 @@ export interface Publisher {
   publish(variant: VariantRow, config: Record<string, string>): Promise<PublishResult>;
   // Verifica credenziali/raggiungibilità senza pubblicare contenuti reali.
   test(config: Record<string, string>): Promise<PublishResult>;
+}
+
+// ── Visibilità SEO/LLM (MVP-3) ───────────────────────────────────
+// Config della pseudo-integrazione 'visibility' (tabella integrations).
+// Tutti i valori sono stringhe (stesso stile di postStatus su WordPress).
+export interface VisibilityConfig {
+  brand: string;           // nome brand da cercare
+  siteDomain: string;      // dominio del sito principale (es. miosito.it)
+  profileUrl?: string;     // profilo target (es. LinkedIn) opzionale
+  intervalHours?: string;  // intervallo tra check per elemento (default 24)
+  autoOptimize?: string;   // 'true' per rigenerare bozze ottimizzate in automatico
+  maxDailyChecks?: string; // cap giornaliero di check (default 40)
+}
+
+// Riga di visibility_checks come letta dal DB (campi JSON serializzati).
+export interface VisibilityCheckRow {
+  id: string;
+  scope: 'publication' | 'master';
+  refId: string;
+  platform: string;
+  url: string;
+  serpPresence: number | null;
+  brandMentions: number;
+  llmCited: number | null;
+  indexedGsc: number | null;
+  entityMatches: string; // JSON {matched,missing}
+  topSources: string;    // JSON [{domain,title,matched}]
+  queries: string;       // JSON string[]
+  answerText: string;
+  score: number;
+  status: 'ok' | 'failed';
+  notes: string;
+  checkedAt: string;
 }
