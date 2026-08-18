@@ -24,6 +24,15 @@ const CONNECTOR_FIELDS: Record<string, Array<{ key: string; label: string; secre
     { key: 'webhookUrl', label: 'URL webhook scheduler', placeholder: 'https://hook.make.com/... (Make/n8n/Publer)' },
     { key: 'secret', label: 'Segreto firma HMAC (opzionale)', secret: true, placeholder: 'condiviso con lo scheduler' },
   ],
+  bluesky: [
+    { key: 'identifier', label: 'Handle Bluesky', placeholder: 'nome.bsky.social' },
+    { key: 'appPassword', label: 'App password', secret: true, placeholder: 'da Impostazioni → App Passwords (mai la password del profilo)' },
+    { key: 'service', label: 'Servizio PDS (opzionale)', placeholder: 'https://bsky.social' },
+  ],
+  mastodon: [
+    { key: 'instanceUrl', label: 'URL istanza', placeholder: 'https://mastodon.social' },
+    { key: 'token', label: 'Access token', secret: true, placeholder: 'da Preferenze → Sviluppo → applicazione con scope write:statuses' },
+  ],
   // MVP-3: pseudo-integrazioni di configurazione (non pubblicano nulla).
   gemini: [
     { key: 'brand', label: 'Nome brand da cercare', placeholder: 'Il Mio Brand' },
@@ -44,9 +53,15 @@ const CONNECTOR_LABEL: Record<string, string> = {
   wordpress: 'WordPress REST API',
   github: 'GitHub REST API',
   webhook: 'Webhook → scheduler autorizzato',
+  bluesky: 'Bluesky — AT Protocol',
+  mastodon: 'Mastodon REST API',
   gemini: 'Gemini + Google Search grounding (misura, non pubblica)',
   gsc: 'Google Search Console — URL Inspection (misura, non pubblica)',
 };
+
+// Un connettore senza campi definiti non deve rompere la pagina: si degrada a
+// scheda in sola lettura (attivabile/testabile, nessun campo da compilare).
+const fieldsFor = (connector: string) => CONNECTOR_FIELDS[connector] ?? [];
 
 export function Integrations() {
   const [items, setItems] = useState<Integration[]>([]);
@@ -69,7 +84,7 @@ export function Integrations() {
     setBusy(it.platform);
     try {
       const config: Record<string, string> = {};
-      for (const f of CONNECTOR_FIELDS[it.connector]) config[f.key] = fieldValue(it, f.key);
+      for (const f of fieldsFor(it.connector)) config[f.key] = fieldValue(it, f.key);
       await fetch(`/api/integrations/${it.platform}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled, config }),
@@ -123,7 +138,7 @@ export function Integrations() {
               </div>
 
               <div className="space-y-3">
-                {CONNECTOR_FIELDS[it.connector].map((f) => (
+                {fieldsFor(it.connector).map((f) => (
                   <div key={f.key}>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{f.label}</label>
                     {f.multiline ? (

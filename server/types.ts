@@ -83,7 +83,15 @@ export interface Utm {
 // 'gemini' e 'gsc' (MVP-3) sono connettori di sola configurazione/lettura:
 // non pubblicano mai nulla.
 
-export type ConnectorId = 'devto' | 'wordpress' | 'github' | 'webhook' | 'gemini' | 'gsc';
+export type ConnectorId =
+  | 'devto'
+  | 'wordpress'
+  | 'github'
+  | 'webhook'
+  | 'bluesky'
+  | 'mastodon'
+  | 'gemini'
+  | 'gsc';
 
 export interface IntegrationRow {
   platform: string;

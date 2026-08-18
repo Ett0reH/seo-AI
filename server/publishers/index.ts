@@ -9,6 +9,8 @@ import { devtoPublisher } from './devto';
 import { wordpressPublisher } from './wordpress';
 import { githubPublisher } from './github';
 import { webhookPublisher } from './webhook';
+import { blueskyPublisher } from './bluesky';
+import { mastodonPublisher } from './mastodon';
 import { gscConnector } from '../lib/gsc';
 import { geminiVisibilityConnector } from '../agents/seoVisibility';
 import { getIntegration } from '../lib/integrations';
@@ -21,6 +23,8 @@ const CONNECTORS: Record<ConnectorId, Publisher> = {
   wordpress: wordpressPublisher,
   github: githubPublisher,
   webhook: webhookPublisher,
+  bluesky: blueskyPublisher,
+  mastodon: mastodonPublisher,
   gemini: geminiVisibilityConnector, // MVP-3: sola configurazione, non pubblica
   gsc: gscConnector,                 // MVP-3: sola configurazione, non pubblica
 };
@@ -31,6 +35,8 @@ export const DEFAULT_CONNECTOR: Record<string, ConnectorId> = {
   devto: 'devto',
   wordpress: 'wordpress',
   github: 'github',
+  bluesky: 'bluesky',
+  mastodon: 'mastodon',
   youtube: 'webhook',
   linkedin_company: 'webhook',
   instagram: 'webhook',

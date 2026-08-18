@@ -244,11 +244,11 @@ if (sitesCount.c === 0) {
   insertEntity.run('ent-3', 'Mechanical Keyboard', 'Hardware', 'https://en.wikipedia.org/wiki/Computer_keyboard', 28);
 }
 
-// Seed configurazione piattaforme (idempotente, indipendente dal seed mock sopra).
-const platformsCount = db.prepare('SELECT COUNT(*) as c FROM platforms').get() as { c: number };
-if (platformsCount.c === 0) {
+// Seed configurazione piattaforme (idempotente per riga: aggiunge le mancanti
+// anche su un DB già popolato, senza sovrascrivere le esistenti).
+{
   const insertPlatform = db.prepare(
-    'INSERT INTO platforms (id, name, publishMethod, maxLength, hashtagLimit, linkPolicy, toneHint, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+    'INSERT OR IGNORE INTO platforms (id, name, publishMethod, maxLength, hashtagLimit, linkPolicy, toneHint, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
   );
   // publishMethod: api | scheduler | semi_automatic | manual_guided
   // linkPolicy:    inline | first_comment | bio_only | none
@@ -268,6 +268,8 @@ if (platformsCount.c === 0) {
     ['quora',             'Quora',                        'manual_guided',  0,    0, 'none',          'risposta utile, esperto, Q&A'],
     ['hackernews',        'Hacker News',                  'manual_guided',  0,    0, 'none',          'sobrio, tecnico, no marketing'],
     ['slideshare',        'SlideShare / PDF sharing',     'semi_automatic', 0,    0, 'inline',        'slide, sintetico, visual'],
+    ['bluesky',           'Bluesky',                      'api',            300,  3, 'inline',        'breve, conversazionale, community aperta'],
+    ['mastodon',          'Mastodon',                     'api',            500,  4, 'inline',        'community, open-source, autentico'],
   ];
   for (const [id, name, method, maxLen, hashtags, linkPolicy, tone] of seed) {
     insertPlatform.run(id, name, method, maxLen, hashtags, linkPolicy, tone);
