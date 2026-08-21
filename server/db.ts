@@ -137,7 +137,7 @@ db.exec(`
   -- ============================================================
   CREATE TABLE IF NOT EXISTS integrations (
     platform TEXT PRIMARY KEY,  -- id piattaforma (platforms.id)
-    connector TEXT,             -- devto | wordpress | github | webhook
+    connector TEXT,             -- devto | wordpress | webhook | connector legacy opzionali
     config TEXT,                -- JSON credenziali/parametri
     enabled INTEGER DEFAULT 0,
     lastTestedAt TEXT,
@@ -244,34 +244,41 @@ if (sitesCount.c === 0) {
   insertEntity.run('ent-3', 'Mechanical Keyboard', 'Hardware', 'https://en.wikipedia.org/wiki/Computer_keyboard', 28);
 }
 
-// Seed configurazione piattaforme (idempotente per riga: aggiunge le mancanti
-// anche su un DB già popolato, senza sovrascrivere le esistenti).
+// Seed configurazione piattaforme (idempotente): mantiene esattamente il set
+// entity SEO scelto, aggiornando configurazione e disabilitando i canali rimossi.
 {
   const insertPlatform = db.prepare(
-    'INSERT OR IGNORE INTO platforms (id, name, publishMethod, maxLength, hashtagLimit, linkPolicy, toneHint, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, 1)'
+    `INSERT INTO platforms (id, name, publishMethod, maxLength, hashtagLimit, linkPolicy, toneHint, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+     ON CONFLICT(id) DO UPDATE SET
+       name=excluded.name,
+       publishMethod=excluded.publishMethod,
+       maxLength=excluded.maxLength,
+       hashtagLimit=excluded.hashtagLimit,
+       linkPolicy=excluded.linkPolicy,
+       toneHint=excluded.toneHint`
   );
   // publishMethod: api | scheduler | semi_automatic | manual_guided
   // linkPolicy:    inline | first_comment | bio_only | none
   const seed: Array<[string, string, string, number, number, string, string]> = [
-    ['linkedin_personal', 'LinkedIn (profilo personale)', 'semi_automatic', 3000, 5, 'first_comment', 'professionale, prima persona, insight'],
-    ['linkedin_company',  'LinkedIn (pagina aziendale)',  'scheduler',      3000, 5, 'inline',        'istituzionale, valore, brand'],
-    ['wordpress',         'WordPress (sito proprio)',     'api',            0,    0, 'inline',        'approfondito, SEO, editoriale'],
-    ['youtube',           'YouTube',                      'api',            5000, 15,'inline',        'descrizione video, timestamp, hook'],
-    ['instagram',         'Instagram Business',           'scheduler',      2200, 15,'bio_only',      'visivo, breve, storytelling'],
-    ['facebook',          'Facebook Page',                'scheduler',      2000, 5, 'inline',        'conversazionale, community'],
-    ['github',            'GitHub',                       'api',            0,    0, 'inline',        'tecnico, README/repo, conciso'],
-    ['devto',             'Dev.to',                       'api',            0,    4, 'inline',        'tutorial, developer, pratico'],
-    ['hashnode',          'Hashnode',                     'semi_automatic', 0,    5, 'inline',        'developer, canonical-aware'],
-    ['medium',            'Medium',                       'semi_automatic', 0,    5, 'inline',        'narrativo, long-form, canonical'],
-    ['substack',          'Substack',                     'semi_automatic', 0,    0, 'inline',        'newsletter, personale, email'],
-    ['reddit',            'Reddit',                       'manual_guided',  40000,0, 'none',          'nativo, non promozionale, community'],
-    ['quora',             'Quora',                        'manual_guided',  0,    0, 'none',          'risposta utile, esperto, Q&A'],
-    ['hackernews',        'Hacker News',                  'manual_guided',  0,    0, 'none',          'sobrio, tecnico, no marketing'],
-    ['slideshare',        'SlideShare / PDF sharing',     'semi_automatic', 0,    0, 'inline',        'slide, sintetico, visual'],
-    ['bluesky',           'Bluesky',                      'api',            300,  3, 'inline',        'breve, conversazionale, community aperta'],
-    ['mastodon',          'Mastodon',                     'api',            500,  4, 'inline',        'community, open-source, autentico'],
+    ['wordpress',               'DNArt / WordPress (sito proprio)', 'api',            0,     0, 'inline',        'fonte canonica, approfondito, E-E-A-T, schema-aware'],
+    ['linkedin_personal',       'LinkedIn (profilo Stefano)',       'semi_automatic', 3000,  5, 'first_comment', 'autorevolezza personale, esperienza diretta, prima persona'],
+    ['linkedin_company',        'LinkedIn (pagina DNArt)',          'scheduler',      3000,  5, 'inline',        'istituzionale, servizi, casi, posizionamento del brand'],
+    ['google_business_profile', 'Google Business Profile',          'semi_automatic', 1500,  0, 'inline',        'entità locale, aggiornamenti, servizi, prove di attività reale'],
+    ['youtube',                 'YouTube',                          'scheduler',      5000, 15, 'inline',        'video, transcript, tutorial, proof of expertise'],
+    ['behance',                 'Behance',                          'semi_automatic', 0,     5, 'inline',        'portfolio, case study visuali, prove creative e asset di brand'],
+    ['devto',                   'Dev.to',                           'api',            0,     4, 'inline',        'tutorial tecnico, developer audience, canonical-aware'],
+    ['hashnode',                'Hashnode',                         'semi_automatic', 0,     5, 'inline',        'blog tecnico, canonical-aware, spiegazioni operative'],
+    ['medium',                  'Medium',                           'semi_automatic', 0,     5, 'inline',        'long-form divulgativo, sintesi strategica, canonical-aware'],
+    ['substack',                'Substack',                         'semi_automatic', 0,     0, 'inline',        "newsletter, opinione d'autore, continuità editoriale"],
+    ['slideshare',              'SlideShare / PDF sharing',         'semi_automatic', 0,     0, 'inline',        'deck, PDF, sintesi visuale, asset riutilizzabili'],
+    ['zenodo',                  'Zenodo',                           'semi_automatic', 0,     0, 'inline',        'report, dataset, DOI, citabilità e persistenza'],
+    ['quora',                   'Quora',                            'manual_guided',  0,     0, 'none',          'risposta utile, esperto, Q&A, niente promozione diretta'],
+    ['reddit',                  'Reddit',                           'manual_guided',  40000, 0, 'none',          'community, discussione nativa, niente link promozionali'],
+    ['hackernews',              'Hacker News',                      'manual_guided',  0,     0, 'none',          'sobrio, tecnico, launch/commenti solo se rilevanti'],
   ];
   for (const [id, name, method, maxLen, hashtags, linkPolicy, tone] of seed) {
     insertPlatform.run(id, name, method, maxLen, hashtags, linkPolicy, tone);
   }
+  db.prepare("UPDATE platforms SET enabled = 0 WHERE id IN ('instagram', 'facebook', 'bluesky', 'mastodon', 'github')").run();
 }

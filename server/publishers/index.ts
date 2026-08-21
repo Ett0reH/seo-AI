@@ -34,13 +34,8 @@ const CONNECTORS: Record<ConnectorId, Publisher> = {
 export const DEFAULT_CONNECTOR: Record<string, ConnectorId> = {
   devto: 'devto',
   wordpress: 'wordpress',
-  github: 'github',
-  bluesky: 'bluesky',
-  mastodon: 'mastodon',
   youtube: 'webhook',
   linkedin_company: 'webhook',
-  instagram: 'webhook',
-  facebook: 'webhook',
 };
 
 // Pseudo-integrazioni di configurazione (MVP-3): NON sono piattaforme di

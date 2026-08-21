@@ -139,27 +139,29 @@ pubblicare nulla.
 
 | Piattaforma | Metodo | Integrazione consigliata |
 |---|---|---|
-| LinkedIn profilo personale | semi-automatico + approvazione | UGC/Posts API (accesso limitato) → altrimenti pacchetto manuale |
-| LinkedIn pagina aziendale | API / scheduler | LinkedIn Marketing API, oppure Publer/Metricool |
-| WordPress | API | REST API / canale HMAC già presente nel repo |
-| YouTube | API | YouTube Data API v3 (descrizioni, community post) |
-| Instagram Business | API / scheduler | Instagram Graph API (via FB), oppure Buffer/Publer |
-| Facebook Page | API / scheduler | Facebook Graph API, oppure scheduler |
-| GitHub | API | REST API (README/repo/Gist/Discussions) |
-| Dev.to | API | Forem API (`/api/articles`) |
-| Hashnode | API / semi-auto | GraphQL API |
-| Medium | semi-auto | API deprecata → semi-automatico / pacchetto manuale |
-| Substack | semi-automatico | Nessuna API pubblica → pacchetto per l'editor |
-| Reddit / Quora / Hacker News | **manuale guidato** | Nessuna automazione: pubblicazione nativa, mai forzata |
-| SlideShare / PDF sharing | semi-auto / manuale | Upload manuale/scheduler; generazione PDF interna |
+| DNArt / WordPress | API | Fonte canonica: REST API / canale HMAC già presente nel repo |
+| LinkedIn profilo personale | semi-automatico + approvazione | Profilo autore: UGC/Posts API (accesso limitato) → altrimenti pacchetto manuale |
+| LinkedIn pagina aziendale | scheduler | Entità organizzazione: LinkedIn Marketing API, oppure Publer/Metricool |
+| Google Business Profile | semi-automatico | Aggiornamenti e servizi visibili in Search/Maps; pubblicazione manuale approvata |
+| YouTube | scheduler | Video, descrizioni e transcript via YouTube Data API gestita dallo scheduler |
+| Behance | semi-automatico | Portfolio, case study visuali e prove creative coerenti con l'entità DNArt |
+| Dev.to | API | Forem API (`/api/articles`) per tutorial tecnici canonical-aware |
+| Hashnode | semi-automatico | Blog tecnico canonical-aware; GraphQL API se configurata in futuro |
+| Medium | semi-automatico | API deprecata → pacchetto manuale/canonical |
+| Substack | semi-automatico | Nessuna API pubblica → pacchetto per l'editor/newsletter |
+| SlideShare / PDF sharing | semi-automatico | Upload deck/PDF; generazione PDF interna |
+| Zenodo | semi-automatico | Report, dataset e white paper con DOI persistente |
+| Quora | **manuale guidato** | Risposte native, utili e non promozionali |
+| Reddit | **manuale guidato** | Discussioni native, nessuna automazione e nessun link forcing |
+| Hacker News | **manuale guidato** | Solo contenuti tecnici o launch realmente rilevanti |
 
 Per lo scheduling esterno (MVP-2): un unico **adapter webhook** verso Make/n8n/Publer
 che riceve il pacchetto della variante e restituisce l'esito, senza browser.
 
 Stato di implementazione (MVP-2): connettori attivi in `server/publishers/` per
-**Dev.to**, **WordPress REST**, **GitHub** e **webhook firmato** (LinkedIn
-aziendale, Instagram, Facebook, YouTube via scheduler autorizzato). Config e
-credenziali nella tabella `integrations`, UI in *Integrazioni*.
+**Dev.to**, **WordPress REST** e **webhook firmato** (LinkedIn aziendale e
+YouTube via scheduler autorizzato). Config e credenziali nella
+tabella `integrations`, UI in *Integrazioni*.
 
 ---
 
@@ -186,7 +188,7 @@ Builder centralizzato in `server/lib/utm.ts`. Schema:
 | Parametro | Valore |
 |---|---|
 | `utm_source` | id piattaforma (`linkedin_personal`, `devto`, …) |
-| `utm_medium` | classe canale: `social` \| `blog` \| `community` \| `referral` |
+| `utm_medium` | classe canale: `social` \| `blog` \| `portfolio` \| `community` \| `local` \| `document` \| `research` \| `referral` |
 | `utm_campaign` | slug del titolo master (stabile) |
 | `utm_content` | id univoco della variante |
 | `utm_term` | keyword principale (slug), opzionale |
@@ -228,10 +230,10 @@ Nessuna pubblicazione automatica: ci si ferma a "bozza pronta".
 Publishing Router attivo con connettori reali in `server/publishers/`:
 
 - **Dev.to** (Forem API, api-key), **WordPress** (REST API + application
-  password), **GitHub** (REST API `contents`, PAT) → pubblicazione diretta.
+  password) → pubblicazione diretta.
 - **Webhook firmato HMAC-SHA256** verso scheduler autorizzati (Make / n8n /
-  Publer) per LinkedIn aziendale, Instagram, Facebook e YouTube: il sistema
-  invia il pacchetto, lo scheduler autorizzato pubblica allo slot.
+  Publer) per LinkedIn aziendale e YouTube: il sistema invia il pacchetto, lo
+  scheduler autorizzato pubblica allo slot.
 - **Worker di pubblicazione** (`server/orchestrator/publishWorker.ts`): ogni
   minuto pubblica al massimo UNA variante con slot scaduto (mai due nello
   stesso minuto), solo se in stato `scheduled` (già approvata) con metodo
@@ -345,7 +347,8 @@ server/
     publishWorker.ts         # MVP-2: pubblicazione reale allo slot (1/min max)
     visibilityWorker.ts      # MVP-3: 1 check/10min + reoptimizeVariant (feedback loop)
   publishers/                # MVP-2: connettori (solo API/scheduler autorizzati)
-    devto.ts  wordpress.ts  github.ts  webhook.ts  index.ts
+    devto.ts  wordpress.ts  webhook.ts  index.ts
+    github.ts                # legacy/dormiente: non assegnato a piattaforme attive
   lib/
     utm.ts  anchors.ts  scheduling.ts  audit.ts
     integrations.ts          # lettura riga integrations (condivisa)
@@ -469,3 +472,87 @@ Checklist MVP-3 (visibilità):
       `system` in audit.
 - [ ] `GET /api/report` include la sezione `visibility` e gli angoli migliori.
 - [ ] `answerText` non compare in nessuna risposta API né in UI (solo DB).
+
+---
+
+## 16. Registro operativo account e piattaforme DNArt
+
+Aggiornato il **2026-08-20** per il progetto di costruzione dell'entità SEO/LLM
+di DNArt.
+
+**Identità operativa**
+
+| Campo | Valore |
+|---|---|
+| Brand | DNArt |
+| Referente | Stefano Giurin |
+| Dominio canonico | `https://www.dnart.it/` |
+| Email operativa | `stefano@dnart.it` |
+| Telefono | `+39 351 9650299` |
+| Handle preferito | `StefanoDNArt` |
+| Handle lowercase | `stefanodnart` |
+| Handle fallback | `DNArtStefano` |
+
+Regole: account creati solo con dati reali e autorizzati; nessuna password
+salvata in documentazione; nessun bypass di CAPTCHA, OTP, verifica email/SMS o
+policy piattaforma; Reddit, Quora e Hacker News restano sempre manuali guidati.
+
+### 16.1 Decisioni piattaforme
+
+- **GitHub escluso** dalla lista attiva su richiesta: nel database locale la riga
+  `github` resta solo legacy con `enabled = 0`.
+- **Behance inserito** come sostituto, per mantenere 15 piattaforme attive e
+  rafforzare portfolio, case study visuali e prove creative DNArt.
+- Il connettore tecnico `server/publishers/github.ts` resta dormiente/legacy e
+  non è assegnato a nessuna piattaforma attiva in `DEFAULT_CONNECTOR`.
+
+### 16.2 Stato account verificato
+
+| Piattaforma | Stato | URL | Note operative |
+|---|---|---|---|
+| Dev.to | Creato | `https://dev.to/stefanodnart` | Profilo pubblico presente come "Stefano Giurin", joined on 20 ago 2026, 0 post. Prima di usare API o pubblicare: login, verifica email e completamento bio/link. |
+| Substack | Creato | `https://substack.com/@stefanodnart` | Profilo pubblico presente come `@stefanodnart`, bio già orientata ad AI, automazioni e B2B. Risultavano 2 abbonamenti: verificare se mantenerli. Nessun post pubblicato. |
+| Hacker News | Creato | `https://news.ycombinator.com/user?id=StefanoDNArt` | Account presente con user `StefanoDNArt` e karma 1. Email interna vuota: aggiungere `stefano@dnart.it` per recupero password. |
+| Medium | Esistente | `https://medium.com/@stefanogiurin` | Esiste già un profilo personale Stefano Giurin con articoli del 2019. `@StefanoDNArt` non esiste: meglio aggiornare il profilo esistente invece di creare duplicati. |
+| Hashnode | Non completato | `https://hashnode.com/@stefanodnart` | La pagina pubblica risponde "User not found". Le settings rimandano al login: iscrizione non confermata. |
+
+### 16.3 Piattaforme da completare o collegare
+
+| Piattaforma | Stato | Prossima azione |
+|---|---|---|
+| Behance | Da creare | Creare asset portfolio DNArt con case study visuali e link a dnart.it. |
+| Hashnode | Da completare | Rifare o completare registrazione con email corretta, poi verificare handle `stefanodnart`. |
+| Medium | Da aggiornare | Aggiornare bio, link e descrizione del profilo `@stefanogiurin`. |
+| Dev.to | Da completare | Completare profilo, website, bio e social links; API key solo dopo conferma esplicita. |
+| Substack | Da rifinire | Decidere se usare solo profilo autore o creare una pubblicazione/newsletter DNArt. |
+| Hacker News | Da rifinire | Inserire email di recupero nel profilo. |
+| SlideShare / PDF sharing | Da creare/verificare | Usare per deck e PDF citabili. |
+| Zenodo | Da creare/verificare | Usare solo per report, dataset o white paper realmente persistenti/citabili. |
+| Quora | Da creare/verificare | Risposte native, utili, senza link forcing. |
+| Reddit | Da creare/verificare | Prima ascolto community; pubblicazione solo manuale e contestuale. |
+| Google Business Profile | Da collegare/verificare | Serve accesso/proprietà Google corretta per DNArt. |
+| YouTube | Da collegare/verificare | Serve account/canale Google autorizzato. |
+| LinkedIn personale | Esistente da verificare | Profilo noto: `https://it.linkedin.com/in/stefanogiurin`. |
+| LinkedIn aziendale | Esistente da verificare | Confermare URL corretto della pagina DNArt: attenzione a risultati LinkedIn non legati a `dnart.it`. |
+| WordPress DNArt | Esistente | Fonte canonica: `dnart.it`; usare pipeline interna già documentata per articoli. |
+
+### 16.4 Modifiche progetto collegate
+
+| File | Modifica |
+|---|---|
+| `.gitignore` | Aggiunto `data/` per non tracciare il DB locale SQLite. |
+| `server/db.ts` | Seed piattaforme aggiornato: GitHub disabilitato, Behance aggiunto, vecchi canali rimossi/disabilitati. |
+| `server/lib/utm.ts` | Medium UTM coerenti: `portfolio` per Behance, `local` per GBP, `document` per SlideShare, `research` per Zenodo. |
+| `server/publishers/index.ts` | GitHub rimosso dai connettori di default; restano auto/scheduler solo Dev.to, WordPress, LinkedIn company via webhook e YouTube via webhook. |
+| `docs/architettura-distribuzione-multi-agente.md` | Questa documentazione aggiornata con piattaforme, account e decisioni operative. |
+
+Verifiche eseguite il 2026-08-20:
+
+```bash
+npm run lint
+npm run build
+```
+
+Esito: entrambe passate. Verifica DB locale: `behance` attivo con `enabled = 1`,
+`github` presente solo come riga disabilitata con `enabled = 0`, piattaforme
+attive totali = 15.

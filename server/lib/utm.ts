@@ -2,9 +2,13 @@ import type { Utm, PublishMethod } from '../types';
 
 // Mappa il metodo di pubblicazione a un utm_medium coerente.
 function mediumFor(platformId: string): string {
-  const social = ['linkedin_personal', 'linkedin_company', 'instagram', 'facebook', 'youtube'];
+  const social = ['linkedin_personal', 'linkedin_company', 'youtube'];
   const blog = ['wordpress', 'medium', 'hashnode', 'devto', 'substack'];
   const community = ['reddit', 'quora', 'hackernews'];
+  if (platformId === 'google_business_profile') return 'local';
+  if (platformId === 'behance') return 'portfolio';
+  if (platformId === 'slideshare') return 'document';
+  if (platformId === 'zenodo') return 'research';
   if (social.includes(platformId)) return 'social';
   if (blog.includes(platformId)) return 'blog';
   if (community.includes(platformId)) return 'community';
